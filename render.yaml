@@ -1,13 +1,19 @@
 # Render Blueprint for Global Pulse
 # Docs: https://render.com/docs/blueprint-spec
 #
-# Deploys the app as a Node web service with a persistent disk so that
-# community submissions (server data) survive deploys and restarts.
+# Deploys a Node web service backed by a managed PostgreSQL database, so all
+# community submissions are stored durably and survive deploys and restarts.
+databases:
+  - name: global-pulse-db
+    databaseName: global_pulse
+    user: global_pulse
+    plan: basic-256mb
+    region: oregon
+
 services:
   - type: web
     name: global-pulse
     runtime: node
-    # Persistent disks require a paid instance type (Free does not support them).
     plan: starter
     region: oregon
     branch: main
@@ -16,9 +22,11 @@ services:
     healthCheckPath: /api/health
     autoDeploy: true
     envVars:
-      # Where the app writes data.json — must match the disk mountPath below.
-      - key: DATA_DIR
-        value: /var/data
+      # Postgres connection string, injected from the database above.
+      - key: DATABASE_URL
+        fromDatabase:
+          name: global-pulse-db
+          property: connectionString
       # Admin password that unlocks the continent-focus control.
       # Set this in the Render dashboard (kept out of source control).
       - key: ADMIN_PASSWORD
@@ -27,7 +35,3 @@ services:
       # value and keeps it stable across deploys (sessions survive restarts).
       - key: SESSION_SECRET
         generateValue: true
-    disk:
-      name: global-pulse-data
-      mountPath: /var/data
-      sizeGB: 1

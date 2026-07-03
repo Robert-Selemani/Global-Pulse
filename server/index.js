@@ -3,10 +3,13 @@
 /**
  * Global Pulse - Interactive Community Map
  *
- * A zero-dependency Node.js HTTP server that powers the community
- * visualization tool described in the Software Functionality Document.
- * It exposes a small JSON API, an admin session layer, and serves the
- * static client.
+ * A small Node.js HTTP server that powers the community visualization tool
+ * described in the Software Functionality Document. It exposes a JSON API, an
+ * admin session layer, and serves the static client.
+ *
+ * Persistence is pluggable: it uses PostgreSQL when DATABASE_URL is set
+ * (production, e.g. Render Postgres) and falls back to a JSON file otherwise
+ * (local development, no database required).
  */
 
 const http = require('http');
@@ -18,23 +21,11 @@ const { URL } = require('url');
 const PORT = process.env.PORT || 3000;
 const CLIENT_DIR = path.join(__dirname, '..', 'client');
 
-// Submissions are persisted here. On Render, DATA_DIR points at a mounted
-// persistent disk (e.g. /var/data) so data survives deploys and restarts.
-// Locally it defaults to the server directory.
+// File-store location (used only when DATABASE_URL is not set).
 const DATA_DIR = process.env.DATA_DIR || __dirname;
 const DATA_FILE = path.join(DATA_DIR, 'data.json');
 
-try {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-} catch (err) {
-  // eslint-disable-next-line no-console
-  console.error('Could not create data directory ' + DATA_DIR + ':', err.message);
-}
-
 // --- Admin auth configuration ---------------------------------------------
-// ADMIN_PASSWORD gates the continent-focus control. Set it in the environment
-// for any real deployment. SESSION_SECRET signs session cookies; if unset a
-// random one is generated per boot (which invalidates sessions on restart).
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'change-me';
 const SESSION_SECRET =
   process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
@@ -48,35 +39,6 @@ if (!process.env.ADMIN_PASSWORD) {
       'Set ADMIN_PASSWORD in the environment before deploying.'
   );
 }
-
-// ---------------------------------------------------------------------------
-// Persistence
-// ---------------------------------------------------------------------------
-
-/**
- * Submissions are stored as a flat list of records. Aggregation into
- * per-country / per-community counts happens on read. This keeps the raw
- * data intact so normalization rules can evolve without losing information.
- *
- * Record shape: { countryId, countryName, community, normalized, ts }
- */
-function loadSubmissions() {
-  try {
-    const raw = fs.readFileSync(DATA_FILE, 'utf8');
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed.submissions) ? parsed.submissions : [];
-  } catch (err) {
-    return [];
-  }
-}
-
-function saveSubmissions(subs) {
-  const tmp = DATA_FILE + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify({ submissions: subs }, null, 2));
-  fs.renameSync(tmp, DATA_FILE); // atomic write
-}
-
-let submissions = loadSubmissions();
 
 // ---------------------------------------------------------------------------
 // Normalization & deduplication
@@ -104,13 +66,137 @@ function cleanDisplay(name) {
 }
 
 // ---------------------------------------------------------------------------
+// Storage backends
+// ---------------------------------------------------------------------------
+
+/**
+ * Both stores expose the same async interface:
+ *   init()   -> prepare the backend
+ *   add(rec) -> persist one submission
+ *   all()    -> [{ countryId, countryName, community, normalized }, ...]
+ *   count()  -> number of submissions
+ */
+
+function makeFileStore(dataFile) {
+  let cache = [];
+  function load() {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
+      return Array.isArray(parsed.submissions) ? parsed.submissions : [];
+    } catch (err) {
+      return [];
+    }
+  }
+  function save() {
+    const tmp = dataFile + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify({ submissions: cache }, null, 2));
+    fs.renameSync(tmp, dataFile); // atomic
+  }
+  return {
+    async init() {
+      try {
+        fs.mkdirSync(path.dirname(dataFile), { recursive: true });
+      } catch (_) {
+        /* ignore */
+      }
+      cache = load();
+      // eslint-disable-next-line no-console
+      console.log('Storage: JSON file at ' + dataFile);
+    },
+    async add(rec) {
+      cache.push({
+        countryId: rec.countryId,
+        countryName: rec.countryName,
+        community: rec.community,
+        normalized: rec.normalized,
+        ts: Date.now(),
+      });
+      save();
+    },
+    async all() {
+      return cache.slice();
+    },
+    async count() {
+      return cache.length;
+    },
+  };
+}
+
+function makePostgresStore(connectionString) {
+  // Lazy require so local runs (file store) don't need the pg package.
+  const { Pool } = require('pg');
+
+  let ssl = false;
+  try {
+    const host = new URL(connectionString).hostname;
+    // External hosts carry a domain (dots); Render's internal host does not.
+    if (host && host !== 'localhost' && host !== '127.0.0.1' && host.includes('.')) {
+      ssl = { rejectUnauthorized: false };
+    }
+  } catch (_) {
+    /* keep ssl = false */
+  }
+
+  const pool = new Pool({ connectionString, ssl });
+
+  return {
+    async init() {
+      await pool.query(
+        `CREATE TABLE IF NOT EXISTS submissions (
+           id           BIGSERIAL PRIMARY KEY,
+           country_id   TEXT NOT NULL,
+           country_name TEXT NOT NULL,
+           community    TEXT NOT NULL,
+           normalized   TEXT NOT NULL,
+           created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+         )`
+      );
+      await pool.query(
+        `CREATE INDEX IF NOT EXISTS idx_submissions_country
+           ON submissions (country_id)`
+      );
+      // eslint-disable-next-line no-console
+      console.log('Storage: PostgreSQL');
+    },
+    async add(rec) {
+      await pool.query(
+        `INSERT INTO submissions (country_id, country_name, community, normalized)
+         VALUES ($1, $2, $3, $4)`,
+        [rec.countryId, rec.countryName, rec.community, rec.normalized]
+      );
+    },
+    async all() {
+      const { rows } = await pool.query(
+        `SELECT country_id, country_name, community, normalized
+           FROM submissions ORDER BY id`
+      );
+      return rows.map((r) => ({
+        countryId: r.country_id,
+        countryName: r.country_name,
+        community: r.community,
+        normalized: r.normalized,
+      }));
+    },
+    async count() {
+      const { rows } = await pool.query('SELECT count(*)::int AS n FROM submissions');
+      return rows[0].n;
+    },
+  };
+}
+
+const store = process.env.DATABASE_URL
+  ? makePostgresStore(process.env.DATABASE_URL)
+  : makeFileStore(DATA_FILE);
+
+// ---------------------------------------------------------------------------
 // Aggregation
 // ---------------------------------------------------------------------------
 
-function aggregate() {
+/** Aggregate raw submission rows into per-country community counts. */
+function aggregate(rows) {
   const countries = {};
 
-  for (const rec of submissions) {
+  for (const rec of rows) {
     if (!rec.countryId) continue;
     let country = countries[rec.countryId];
     if (!country) {
@@ -135,7 +221,6 @@ function aggregate() {
     community.count += 1;
   }
 
-  // Flatten community maps into sorted arrays and compute summary stats.
   let totalUsers = 0;
   let totalCommunities = 0;
   const out = {};
@@ -165,17 +250,13 @@ function aggregate() {
   };
 }
 
+async function computeData() {
+  return aggregate(await store.all());
+}
+
 // ---------------------------------------------------------------------------
 // Sessions (signed cookies, no dependencies)
 // ---------------------------------------------------------------------------
-
-function sign(payload) {
-  const sig = crypto
-    .createHmac('sha256', SESSION_SECRET)
-    .update(payload)
-    .digest('base64url');
-  return payload + '.' + sig;
-}
 
 function verifyToken(token) {
   if (!token) return null;
@@ -190,12 +271,19 @@ function verifyToken(token) {
   const a = Buffer.from(sig);
   const b = Buffer.from(expected);
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
-  // payload = "admin.<expiryMs>"
   const parts = payload.split('.');
   if (parts[0] !== 'admin') return null;
   const expiry = Number(parts[1]);
   if (!Number.isFinite(expiry) || Date.now() > expiry) return null;
   return { role: 'admin', expiry };
+}
+
+function signToken(payload) {
+  const sig = crypto
+    .createHmac('sha256', SESSION_SECRET)
+    .update(payload)
+    .digest('base64url');
+  return payload + '.' + sig;
 }
 
 function parseCookies(req) {
@@ -235,7 +323,6 @@ function passwordMatches(candidate) {
   const a = Buffer.from(String(candidate));
   const b = Buffer.from(ADMIN_PASSWORD);
   if (a.length !== b.length) {
-    // Still run a comparison to avoid trivial length timing leaks.
     crypto.timingSafeEqual(b, b);
     return false;
   }
@@ -243,7 +330,7 @@ function passwordMatches(candidate) {
 }
 
 // --- Simple in-memory login rate limiting ---------------------------------
-const loginAttempts = new Map(); // ip -> { count, first }
+const loginAttempts = new Map();
 const RL_WINDOW_MS = 15 * 60 * 1000;
 const RL_MAX = 10;
 
@@ -277,7 +364,7 @@ function setSecurityHeaders(res) {
     'Content-Security-Policy',
     [
       "default-src 'self'",
-      "img-src 'self' https://*.basemaps.cartocdn.com data:",
+      "img-src 'self' https://*.basemaps.cartocdn.com https://flagcdn.com data:",
       "style-src 'self' 'unsafe-inline'",
       "script-src 'self'",
       "connect-src 'self'",
@@ -309,7 +396,6 @@ const MIME = {
 };
 
 function serveStatic(req, res, pathname) {
-  // Prevent path traversal; resolve within CLIENT_DIR only.
   const safePath = path.normalize(pathname).replace(/^(\.\.[/\\])+/, '');
   let filePath = path.join(CLIENT_DIR, safePath);
   if (pathname === '/' || pathname === '') {
@@ -326,7 +412,6 @@ function serveStatic(req, res, pathname) {
       return;
     }
     const ext = path.extname(filePath).toLowerCase();
-    // Long-cache immutable vendored assets; keep HTML fresh.
     const cache = pathname.startsWith('/vendor/')
       ? 'public, max-age=31536000, immutable'
       : 'no-cache';
@@ -362,59 +447,49 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const { pathname } = url;
 
-  // --- API: session status ---
-  if (req.method === 'GET' && pathname === '/api/session') {
-    sendJson(res, 200, { admin: isAdmin(req) });
-    return;
-  }
-
-  // --- API: admin login ---
-  if (req.method === 'POST' && pathname === '/api/login') {
-    if (rateLimited(clientIp(req))) {
-      sendJson(res, 429, { error: 'Too many attempts. Try again later.' });
+  try {
+    // --- API: session status ---
+    if (req.method === 'GET' && pathname === '/api/session') {
+      sendJson(res, 200, { admin: isAdmin(req) });
       return;
     }
-    try {
+
+    // --- API: admin login ---
+    if (req.method === 'POST' && pathname === '/api/login') {
+      if (rateLimited(clientIp(req))) {
+        sendJson(res, 429, { error: 'Too many attempts. Try again later.' });
+        return;
+      }
       const data = JSON.parse((await readBody(req)) || '{}');
       if (!passwordMatches(data.password || '')) {
         sendJson(res, 401, { error: 'Incorrect password.' });
         return;
       }
-      const token = sign('admin.' + (Date.now() + SESSION_TTL_MS));
+      const token = signToken('admin.' + (Date.now() + SESSION_TTL_MS));
       sendJson(
         res,
         200,
         { admin: true },
         { 'Set-Cookie': sessionCookie(req, token, SESSION_TTL_MS / 1000) }
       );
-    } catch (err) {
-      sendJson(res, 400, { error: 'Invalid request.' });
+      return;
     }
-    return;
-  }
 
-  // --- API: admin logout ---
-  if (req.method === 'POST' && pathname === '/api/logout') {
-    sendJson(
-      res,
-      200,
-      { admin: false },
-      { 'Set-Cookie': sessionCookie(req, '', 0) }
-    );
-    return;
-  }
+    // --- API: admin logout ---
+    if (req.method === 'POST' && pathname === '/api/logout') {
+      sendJson(res, 200, { admin: false }, { 'Set-Cookie': sessionCookie(req, '', 0) });
+      return;
+    }
 
-  // --- API: read aggregated data ---
-  if (req.method === 'GET' && pathname === '/api/data') {
-    sendJson(res, 200, aggregate());
-    return;
-  }
+    // --- API: read aggregated data ---
+    if (req.method === 'GET' && pathname === '/api/data') {
+      sendJson(res, 200, await computeData());
+      return;
+    }
 
-  // --- API: submit a community entry ---
-  if (req.method === 'POST' && pathname === '/api/submit') {
-    try {
-      const raw = await readBody(req);
-      const data = JSON.parse(raw || '{}');
+    // --- API: submit a community entry ---
+    if (req.method === 'POST' && pathname === '/api/submit') {
+      const data = JSON.parse((await readBody(req)) || '{}');
       const countryId = String(data.countryId || '').trim();
       const countryName = String(data.countryName || '').trim();
       const community = cleanDisplay(data.community || '');
@@ -432,48 +507,56 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      const record = {
+      await store.add({
         countryId,
         countryName,
         community,
         normalized: normalizeCommunity(community),
-        ts: Date.now(),
-      };
-      submissions.push(record);
-      saveSubmissions(submissions);
+      });
 
-      sendJson(res, 201, { ok: true, data: aggregate() });
-    } catch (err) {
-      sendJson(res, 400, { error: 'Invalid request: ' + err.message });
+      sendJson(res, 201, { ok: true, data: await computeData() });
+      return;
     }
-    return;
-  }
 
-  // --- API: health ---
-  if (req.method === 'GET' && pathname === '/api/health') {
-    sendJson(res, 200, { ok: true, submissions: submissions.length });
-    return;
-  }
+    // --- API: health ---
+    if (req.method === 'GET' && pathname === '/api/health') {
+      sendJson(res, 200, { ok: true, submissions: await store.count() });
+      return;
+    }
 
-  // --- Unknown API route ---
-  if (pathname.startsWith('/api/')) {
-    sendJson(res, 404, { error: 'Not found' });
-    return;
-  }
+    // --- Unknown API route ---
+    if (pathname.startsWith('/api/')) {
+      sendJson(res, 404, { error: 'Not found' });
+      return;
+    }
 
-  // --- Static client ---
-  if (req.method === 'GET') {
-    serveStatic(req, res, pathname);
-    return;
-  }
+    // --- Static client ---
+    if (req.method === 'GET') {
+      serveStatic(req, res, pathname);
+      return;
+    }
 
-  res.writeHead(405, { 'Content-Type': 'text/plain' });
-  res.end('Method Not Allowed');
+    res.writeHead(405, { 'Content-Type': 'text/plain' });
+    res.end('Method Not Allowed');
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('Request error:', err.message);
+    if (!res.headersSent) sendJson(res, 500, { error: 'Server error' });
+  }
 });
 
-server.listen(PORT, () => {
-  // eslint-disable-next-line no-console
-  console.log(`Global Pulse running at http://localhost:${PORT}`);
-});
+store
+  .init()
+  .then(() => {
+    server.listen(PORT, () => {
+      // eslint-disable-next-line no-console
+      console.log(`Global Pulse running at http://localhost:${PORT}`);
+    });
+  })
+  .catch((err) => {
+    // eslint-disable-next-line no-console
+    console.error('Failed to initialize storage:', err.message);
+    process.exit(1);
+  });
 
 module.exports = { normalizeCommunity, aggregate };

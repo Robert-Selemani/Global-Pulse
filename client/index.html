@@ -49,13 +49,25 @@
           </select>
         </div>
 
-        <div class="zoom-indicator" id="zoom-indicator" aria-live="polite">
-          Zoom 100%
+        <div class="zoom-control">
+          <label for="zoom-slider" id="zoom-indicator" aria-live="polite"
+            >Zoom 100%</label
+          >
+          <input
+            type="range"
+            id="zoom-slider"
+            min="2"
+            max="6"
+            step="0.05"
+            value="2"
+            aria-label="Zoom level"
+          />
         </div>
 
         <div class="legend">
-          <span class="swatch active"></span> Has communities
-          <span class="swatch inactive"></span> No communities yet
+          <span class="swatch flag" aria-hidden="true">🏳️</span> Represented
+          (shown by flag)
+          <span class="swatch inactive"></span> Not yet
         </div>
       </section>
 
@@ -80,6 +92,17 @@
           <button type="submit" id="submit-btn">Add to the map</button>
           <p class="form-message" id="form-message" role="status"></p>
         </form>
+
+        <div class="countries-panel">
+          <div class="community-header">
+            <h2>Countries represented</h2>
+            <span class="badge" id="countries-total"></span>
+          </div>
+          <p class="hint" id="countries-hint">
+            No countries yet — add the first community above.
+          </p>
+          <ul class="countries-list" id="countries-list"></ul>
+        </div>
 
         <div class="community-panel">
           <div class="community-header">

@@ -15,11 +15,15 @@ const state = {
   data: { countries: {}, totals: {} }, // aggregated server data
   geo: null, // GeoJSON feature collection
   continents: {}, // countryId -> continent name
+  flags: {}, // countryId (ISO A3) -> ISO A2 code for flag images
   focusContinent: '', // '' means whole world
   layersById: {}, // countryId -> Leaflet layer
   selectedId: null,
   isAdmin: false, // continent focus is admin-only
 };
+
+const SVGNS = 'http://www.w3.org/2000/svg';
+const FLAG_BASE = 'https://flagcdn.com';
 
 // Continents offered in the admin focus control, in display order.
 const CONTINENTS = [
@@ -37,7 +41,11 @@ const els = {
   mapFocus: document.getElementById('map-focus'),
   continentSelect: document.getElementById('continent-select'),
   zoomIndicator: document.getElementById('zoom-indicator'),
+  zoomSlider: document.getElementById('zoom-slider'),
   countrySelect: document.getElementById('country-select'),
+  countriesList: document.getElementById('countries-list'),
+  countriesTotal: document.getElementById('countries-total'),
+  countriesHint: document.getElementById('countries-hint'),
   communityInput: document.getElementById('community-input'),
   form: document.getElementById('entry-form'),
   submitBtn: document.getElementById('submit-btn'),
@@ -69,6 +77,7 @@ const map = L.map('map', {
   zoom: 2,
   minZoom: 2,
   maxZoom: 6,
+  zoomSnap: 0, // allow smooth, fractional zoom for the custom slider
   worldCopyJump: true,
   attributionControl: false,
 });
@@ -82,12 +91,22 @@ const labelLayer = L.layerGroup().addTo(map);
 
 // Show the current zoom as a percentage relative to the min zoom, so every
 // participant can freely pick their own view (pan for the angle, zoom for the
-// level) without needing the admin's continent focus.
-function updateZoomIndicator() {
-  const pct = Math.round(map.getZoom() / map.getMinZoom() * 100);
-  els.zoomIndicator.textContent = 'Zoom ' + pct + '%';
+// level) without needing the admin's continent focus. The slider gives a
+// custom, continuous percentage rather than fixed steps.
+function zoomToPct(zoom) {
+  return Math.round((zoom / map.getMinZoom()) * 100);
 }
-map.on('zoomend', updateZoomIndicator);
+function updateZoomIndicator() {
+  const z = map.getZoom();
+  els.zoomIndicator.textContent = 'Zoom ' + zoomToPct(z) + '%';
+  els.zoomSlider.value = String(z);
+}
+map.on('zoom zoomend', updateZoomIndicator);
+els.zoomSlider.addEventListener('input', () => {
+  const z = parseFloat(els.zoomSlider.value);
+  els.zoomIndicator.textContent = 'Zoom ' + zoomToPct(z) + '%';
+  map.setZoom(z, { animate: false });
+});
 
 const STYLE_INACTIVE = {
   fillColor: '#33465f',
@@ -126,6 +145,76 @@ function styleFor(feature) {
 
 let geoLayer = null;
 
+// --- Flag fills -----------------------------------------------------------
+// Represented countries are filled with their national flag (instead of a
+// flat green). We inject an SVG <pattern> per country into Leaflet's overlay
+// SVG and point the country path's fill at it. Using objectBoundingBox units
+// means the flag scales with the country automatically on zoom.
+
+function flagUrl(id) {
+  const iso2 = state.flags[id];
+  return iso2 ? FLAG_BASE + '/w320/' + iso2 + '.png' : null;
+}
+
+function patternId(id) {
+  return 'flag-' + id;
+}
+
+function overlaySvg() {
+  return document.querySelector('.leaflet-overlay-pane svg');
+}
+
+function ensureDefs() {
+  const svg = overlaySvg();
+  if (!svg) return null;
+  let defs = svg.querySelector('defs.gp-defs');
+  if (!defs) {
+    defs = document.createElementNS(SVGNS, 'defs');
+    defs.setAttribute('class', 'gp-defs');
+    svg.insertBefore(defs, svg.firstChild);
+  }
+  return defs;
+}
+
+function ensurePattern(defs, id) {
+  const url = flagUrl(id);
+  if (!url) return false;
+  if (defs.querySelector('#' + patternId(id))) return true;
+
+  const pat = document.createElementNS(SVGNS, 'pattern');
+  pat.setAttribute('id', patternId(id));
+  pat.setAttribute('patternContentUnits', 'objectBoundingBox');
+  pat.setAttribute('width', '1');
+  pat.setAttribute('height', '1');
+
+  const img = document.createElementNS(SVGNS, 'image');
+  img.setAttribute('width', '1');
+  img.setAttribute('height', '1');
+  img.setAttribute('preserveAspectRatio', 'xMidYMid slice');
+  img.setAttributeNS('http://www.w3.org/1999/xlink', 'href', url);
+  img.setAttribute('href', url);
+
+  pat.appendChild(img);
+  defs.appendChild(pat);
+  return true;
+}
+
+/** Point each represented country's fill at its flag pattern. */
+function applyFlagFills() {
+  const defs = ensureDefs();
+  if (!defs) return;
+  for (const id of Object.keys(state.layersById)) {
+    const layer = state.layersById[id];
+    if (!layer || !layer._path) continue;
+    const info = state.data.countries[id];
+    const active = info && info.totalUsers > 0;
+    if (active && inFocus(id) && ensurePattern(defs, id)) {
+      layer._path.setAttribute('fill', 'url(#' + patternId(id) + ')');
+      layer._path.setAttribute('fill-opacity', id === state.selectedId ? '1' : '0.92');
+    }
+  }
+}
+
 function renderGeo() {
   geoLayer = L.geoJSON(state.geo, {
     style: styleFor,
@@ -133,16 +222,22 @@ function renderGeo() {
       state.layersById[feature.id] = layer;
       layer.on('click', () => selectCountry(feature.id));
       layer.on('mouseover', () => {
-        if (feature.id !== state.selectedId) {
-          layer.setStyle({ fillOpacity: 0.9 });
-        }
+        layer.setStyle({ weight: 2 });
+        layer.bringToFront();
       });
-      layer.on('mouseout', () => geoLayer.resetStyle(layer));
+      layer.on('mouseout', () => {
+        geoLayer.resetStyle(layer);
+        applyFlagFills(); // resetStyle clears the flag fill; restore it
+      });
     },
   }).addTo(map);
+  applyFlagFills();
 }
 
-/** Draw the count bubble + participant pin at each active country's centre. */
+/**
+ * Draw a small participant pin at each represented country's centre. Community
+ * counts are intentionally NOT shown on the map — they live in the sidebar.
+ */
 function renderLabels() {
   labelLayer.clearLayers();
   for (const id of Object.keys(state.data.countries)) {
@@ -155,9 +250,6 @@ function renderLabels() {
     const center = layer.getBounds().getCenter();
     const html =
       '<div class="label-inner">' +
-      '<span class="count-bubble" title="Unique communities">' +
-      info.uniqueCommunities +
-      '</span>' +
       '<span class="user-pin" title="Participants">● ' +
       info.totalUsers +
       '</span>' +
@@ -175,6 +267,7 @@ function renderLabels() {
 function refreshStyles() {
   if (geoLayer) {
     geoLayer.setStyle(styleFor);
+    applyFlagFills(); // setStyle resets fill to a colour; re-assert flags
   }
 }
 
@@ -269,6 +362,7 @@ function selectCountry(id) {
   if (layer) map.fitBounds(layer.getBounds(), { maxZoom: 5, padding: [40, 40] });
 
   renderCommunityList(info);
+  renderCountriesList(); // refresh the selected-row highlight
 }
 
 function featureName(id) {
@@ -316,6 +410,71 @@ function renderStats() {
   els.statUsers.textContent = t.totalUsers || 0;
 }
 
+/**
+ * Always list every represented country with its counts, regardless of which
+ * country (if any) is currently selected for entry.
+ */
+function renderCountriesList() {
+  const countries = Object.values(state.data.countries).sort(
+    (a, b) => b.totalUsers - a.totalUsers || a.name.localeCompare(b.name)
+  );
+
+  els.countriesTotal.textContent = countries.length
+    ? countries.length + (countries.length === 1 ? ' country' : ' countries')
+    : '';
+  els.countriesList.innerHTML = '';
+
+  if (!countries.length) {
+    els.countriesHint.style.display = 'block';
+    return;
+  }
+  els.countriesHint.style.display = 'none';
+
+  const frag = document.createDocumentFragment();
+  for (const c of countries) {
+    const li = document.createElement('li');
+    li.className = 'country-row' + (c.id === state.selectedId ? ' selected' : '');
+    li.tabIndex = 0;
+    li.setAttribute('role', 'button');
+
+    const left = document.createElement('span');
+    left.className = 'country-name';
+    const iso2 = state.flags[c.id];
+    if (iso2) {
+      const flag = document.createElement('img');
+      flag.className = 'row-flag';
+      flag.src = FLAG_BASE + '/24x18/' + iso2 + '.png';
+      flag.alt = '';
+      flag.loading = 'lazy';
+      left.appendChild(flag);
+    }
+    left.appendChild(document.createTextNode(c.name));
+
+    const right = document.createElement('span');
+    right.className = 'country-counts';
+    right.innerHTML =
+      '<span class="cc-comm">' +
+      c.uniqueCommunities +
+      (c.uniqueCommunities === 1 ? ' community' : ' communities') +
+      '</span><span class="cc-users">' +
+      c.totalUsers +
+      (c.totalUsers === 1 ? ' participant' : ' participants') +
+      '</span>';
+
+    li.appendChild(left);
+    li.appendChild(right);
+    li.addEventListener('click', () => selectCountry(c.id));
+    li.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        selectCountry(c.id);
+      }
+    });
+    frag.appendChild(li);
+  }
+  els.countriesList.appendChild(frag);
+}
+
 // ---------------------------------------------------------------------------
 // Data flow
 // ---------------------------------------------------------------------------
@@ -331,6 +490,7 @@ function applyData(data) {
   refreshStyles();
   renderLabels();
   renderStats();
+  renderCountriesList();
   if (state.selectedId) {
     renderCommunityList(state.data.countries[state.selectedId]);
   }
@@ -460,20 +620,23 @@ els.adminLogoutBtn.addEventListener('click', async () => {
 
 async function boot() {
   try {
-    const [geo, data, continents] = await Promise.all([
+    const [geo, data, continents, flags] = await Promise.all([
       fetch('/data/countries.geo.json').then((r) => r.json()),
       fetchData(),
       fetch('/data/continents.json').then((r) => r.json()),
+      fetch('/data/flags.json').then((r) => r.json()),
     ]);
     state.geo = geo;
     state.data = data;
     state.continents = continents;
+    state.flags = flags;
 
     renderGeo();
     populateCountrySelect();
     populateContinentSelect();
     renderLabels();
     renderStats();
+    renderCountriesList();
     updateZoomIndicator();
   } catch (err) {
     setMessage('Could not load the map: ' + err.message, 'error');

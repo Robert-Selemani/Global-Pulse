@@ -23,14 +23,15 @@ Existing polling platforms have two big weaknesses this tool fixes:
 | --- | --- |
 | **Country selection** | Choose from a predefined list (dropdown or click the map). |
 | **Community input** | Free-text field; new communities are catalogued automatically. |
-| **Map coloring** | Countries with ≥1 community turn **green**; others stay neutral. |
-| **Unique community count** | Shown in a bubble at the centre of each active country. |
+| **Flag fill** | Represented countries are filled with their **national flag**; others stay neutral grey. |
 | **Participant pin** | Total users who selected each country, pinned at its centre. |
-| **Sidebar listing** | Lists every unique community in the selected country with member counts. |
+| **Counts in the sidebar** | Per-country community + participant counts live in the sidebar, not on the map. |
+| **Always-on country list** | A "Countries represented" panel always lists every represented country and its counts — even while a country is selected for entry. |
+| **Selected-country detail** | Lists every unique community in the selected country with member counts. |
 | **Deduplication & normalization** | `AI Eswatini`, `ai eswatini`, and `ai-eswatini!` collapse to one community (case-insensitive, punctuation/whitespace-insensitive). |
 | **Live updates** | The map polls the server so an audience sees entries appear in near real-time. |
 | **Admin continent focus** | A logged-in admin can focus the map on a continent (zoom + dim others + filter the country list). |
-| **Participant zoom/pan** | Everyone can freely zoom (with a live zoom-% readout) and pan to choose their own view. |
+| **Participant zoom/pan** | Everyone can freely pan and zoom with a **custom-percentage slider** (smooth, continuous zoom) plus a live zoom-% readout. |
 
 ## Roles
 
@@ -56,21 +57,23 @@ Global-Pulse/
 │   ├── vendor/leaflet/  # Self-hosted Leaflet (no CDN dependency)
 │   └── data/
 │       ├── countries.geo.json   # World country polygons (ISO A3 ids)
-│       └── continents.json      # ISO A3 → continent mapping
+│       ├── continents.json      # ISO A3 → continent mapping
+│       └── flags.json           # ISO A3 → ISO A2 (for flag images)
 ├── docs/                # Software Functionality Document
 ├── render.yaml          # Render deploy blueprint (web service + disk)
 ├── .env.example         # Documented environment variables
 └── package.json
 ```
 
-- **Backend:** plain Node.js (`node:http`) — **no dependencies, no build
-  step**. Submissions are stored in `DATA_DIR/data.json` and aggregated on
-  read. Adds security headers, admin sessions (signed HttpOnly cookies), and
-  login rate limiting.
+- **Backend:** plain Node.js (`node:http`), one dependency (`pg`).
+  Persistence is **pluggable**: PostgreSQL when `DATABASE_URL` is set
+  (production), or a JSON file otherwise (local dev). Adds security headers,
+  admin sessions (signed HttpOnly cookies), and login rate limiting.
 - **Frontend:** vanilla JS + [Leaflet](https://leafletjs.com/) rendering a
-  GeoJSON choropleth. **Leaflet is vendored** into `client/vendor/` so the app
-  has no runtime CDN dependency (this also fixes CDN/SRI failures that could
-  blank the map).
+  GeoJSON map. Represented countries are filled with their flag via SVG
+  patterns (flag images from [flagcdn.com](https://flagcdn.com)). **Leaflet is
+  vendored** into `client/vendor/` so the core map has no runtime CDN
+  dependency.
 
 ### API
 
@@ -89,9 +92,10 @@ See [`.env.example`](./.env.example). Key ones:
 
 | Variable | Purpose |
 | --- | --- |
+| `DATABASE_URL` | PostgreSQL connection string. When set, data is stored in Postgres; otherwise a JSON file is used. |
 | `ADMIN_PASSWORD` | Password for the admin continent-focus control. **Set this.** |
 | `SESSION_SECRET` | Signs admin session cookies. Use a long random string. |
-| `DATA_DIR` | Directory for `data.json` (a persistent disk in production). |
+| `DATA_DIR` | Directory for the JSON-file fallback (only when `DATABASE_URL` is unset). |
 | `PORT` | Port to listen on (Render sets this automatically). |
 
 ## Running locally
@@ -117,37 +121,38 @@ port with `PORT=8080 npm start`.
 
 ## Deploying to Render
 
-This is a **Node web service** (not a static site) because it runs an API and
-persists submissions. A [`render.yaml`](./render.yaml) blueprint is included.
+This is a **Node web service** (not a static site) backed by **Render
+Postgres**. A [`render.yaml`](./render.yaml) blueprint provisions both.
 
 ### Option A — Blueprint (recommended)
 
 1. Push this repo to GitHub.
 2. In Render: **New → Blueprint**, and point it at this repository.
-3. Render reads `render.yaml` and provisions a web service **with a 1 GB
-   persistent disk** mounted at `/var/data`. Click **Apply**.
-4. When prompted, set **`ADMIN_PASSWORD`** (it's marked `sync: false` so it is
+3. Render reads `render.yaml` and provisions a **web service + a managed
+   PostgreSQL database**, wiring `DATABASE_URL` into the service automatically.
+   Click **Apply**.
+4. When prompted, set **`ADMIN_PASSWORD`** (marked `sync: false`, so it is
    never stored in the repo). `SESSION_SECRET` is generated automatically.
 
 ### Option B — Manual
 
-1. **New → Web Service** from your GitHub repo.
-2. Runtime **Node**, Build `npm install`, Start `npm start`.
-3. Add a **Disk**: mount path `/var/data`, size 1 GB.
-4. Add env vars: `DATA_DIR=/var/data`, `ADMIN_PASSWORD=<your password>`, and a
-   long random `SESSION_SECRET`.
+1. **New → PostgreSQL** — create a database, copy its connection string.
+2. **New → Web Service** from your GitHub repo. Runtime **Node**,
+   Build `npm install`, Start `npm start`.
+3. Add env vars: `DATABASE_URL=<connection string>`,
+   `ADMIN_PASSWORD=<your password>`, and a long random `SESSION_SECRET`.
 
 ### Data persistence
 
-Submissions are written to `DATA_DIR/data.json`. Pointing `DATA_DIR` at the
-mounted disk means data **survives deploys and restarts**. Without a disk,
-Render's filesystem is ephemeral and data resets on restart.
+With `DATABASE_URL` set, every submission is written to a `submissions` table
+in Postgres, so data **survives deploys and restarts** and the app can run
+multiple instances. The schema is created automatically on first boot.
 
-> **Note:** Persistent disks require a **paid** instance type (the Free tier
-> does not support disks). The blueprint uses the `starter` plan. A service
-> with a disk cannot scale beyond one instance, which is expected here.
+Locally, `DATABASE_URL` is unset, so the app falls back to a JSON file
+(`server/data.json`) — no database required for development.
 
-Locally, `DATA_DIR` is unset, so data is stored in `server/data.json`.
+> **Note:** The blueprint uses the `starter` web plan and a `basic-256mb`
+> Postgres plan (both paid). Adjust the plans in `render.yaml` to taste.
 
 ## Phased implementation (per the spec)
 
