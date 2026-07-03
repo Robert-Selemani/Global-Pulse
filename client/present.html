@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Global Pulse — Live Community Map</title>
+    <link rel="stylesheet" href="/vendor/leaflet/leaflet.css" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand">
+        <span class="pulse-dot" aria-hidden="true"></span>
+        <h1>Global Pulse</h1>
+      </div>
+      <p class="tagline">Communities around the world — live</p>
+      <ul class="stats" id="global-stats">
+        <li><strong id="stat-countries">0</strong><span>Countries</span></li>
+        <li><strong id="stat-communities">0</strong><span>Communities</span></li>
+        <li><strong id="stat-users">0</strong><span>Participants</span></li>
+      </ul>
+      <div class="admin-area">
+        <a class="admin-btn" href="/vote">Participate →</a>
+      </div>
+    </header>
+
+    <main class="layout layout--present">
+      <section class="map-panel">
+        <div id="map" role="application" aria-label="World community map"></div>
+        <div class="zoom-control">
+          <label for="zoom-slider" id="zoom-indicator" aria-live="polite">Zoom 100%</label>
+          <input type="range" id="zoom-slider" min="2" max="6" step="0.05" value="2" aria-label="Zoom level" />
+        </div>
+        <div class="legend">
+          <span class="swatch flag" aria-hidden="true">🏳️</span> Represented (by flag)
+          <span class="swatch inactive"></span> Not yet
+        </div>
+      </section>
+
+      <aside class="sidebar">
+        <div class="countries-panel">
+          <div class="community-header">
+            <h2>Countries represented</h2>
+            <span class="badge" id="countries-total"></span>
+          </div>
+          <p class="hint" id="countries-hint">
+            Waiting for the first community…
+          </p>
+          <ul class="countries-list" id="countries-list"></ul>
+        </div>
+
+        <div class="community-panel">
+          <div class="community-header">
+            <h2 id="selected-country-name">Select a country</h2>
+            <span class="badge" id="selected-country-count"></span>
+          </div>
+          <button type="button" class="btn-ghost" id="clear-selection" hidden>
+            Clear selection
+          </button>
+          <p class="hint" id="community-hint">
+            Click a country on the map to see its communities.
+          </p>
+          <ul class="community-list" id="community-list"></ul>
+        </div>
+      </aside>
+    </main>
+
+    <footer class="app-footer">
+      Developed by
+      <a
+        href="https://www.linkedin.com/in/robert-selemani/"
+        target="_blank"
+        rel="noopener noreferrer"
+        >Robert Selemani</a
+      >
+    </footer>
+
+    <script src="/vendor/leaflet/leaflet.js"></script>
+    <script src="/mapcore.js"></script>
+    <script src="/present.js"></script>
+  </body>
+</html>

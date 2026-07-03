@@ -27,11 +27,7 @@ services:
         fromDatabase:
           name: global-pulse-db
           property: connectionString
-      # Admin password that unlocks the continent-focus control.
-      # Set this in the Render dashboard (kept out of source control).
-      - key: ADMIN_PASSWORD
-        sync: false
-      # Secret used to sign admin session cookies. Render generates a strong
-      # value and keeps it stable across deploys (sessions survive restarts).
+      # Secret used to sign session cookies. Render generates a strong value
+      # and keeps it stable across deploys (sessions survive restarts).
       - key: SESSION_SECRET
         generateValue: true

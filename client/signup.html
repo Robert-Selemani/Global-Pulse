@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sign up — Global Pulse</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="auth-body">
+    <main class="auth-wrap">
+      <form class="auth-card" id="signup-form" autocomplete="on">
+        <div class="brand center">
+          <span class="pulse-dot" aria-hidden="true"></span>
+          <h1>Global Pulse</h1>
+        </div>
+        <h2>Create your account</h2>
+
+        <div class="super-banner" id="first-user-banner" hidden>
+          🎉 You're the first to sign up — you'll be the <strong>super admin</strong>.
+        </div>
+
+        <label for="auth-email">Email</label>
+        <input id="auth-email" type="email" autocomplete="username" required />
+
+        <label for="auth-password">Password</label>
+        <input
+          id="auth-password"
+          type="password"
+          autocomplete="new-password"
+          minlength="6"
+          required
+        />
+        <p class="field-hint">At least 6 characters.</p>
+
+        <p class="form-message" id="auth-message" role="status"></p>
+        <button type="submit" class="admin-btn full" id="auth-submit">Sign up</button>
+
+        <p class="auth-alt">
+          Already have an account? <a href="/login">Log in</a>
+        </p>
+        <p class="auth-alt"><a href="/present">← Back to the live map</a></p>
+      </form>
+    </main>
+
+    <script src="/auth.js"></script>
+  </body>
+</html>

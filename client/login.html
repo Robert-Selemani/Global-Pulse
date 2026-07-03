@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Log in — Global Pulse</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="auth-body">
+    <main class="auth-wrap">
+      <form class="auth-card" id="login-form" autocomplete="on">
+        <div class="brand center">
+          <span class="pulse-dot" aria-hidden="true"></span>
+          <h1>Global Pulse</h1>
+        </div>
+        <h2>Log in</h2>
+
+        <label for="auth-email">Email</label>
+        <input id="auth-email" type="email" autocomplete="username" required />
+
+        <label for="auth-password">Password</label>
+        <input
+          id="auth-password"
+          type="password"
+          autocomplete="current-password"
+          required
+        />
+
+        <p class="form-message" id="auth-message" role="status"></p>
+        <button type="submit" class="admin-btn full" id="auth-submit">Log in</button>
+
+        <p class="auth-alt">
+          No account yet? <a href="/signup">Create one</a>
+        </p>
+        <p class="auth-alt"><a href="/present">← Back to the live map</a></p>
+      </form>
+    </main>
+
+    <script src="/auth.js"></script>
+  </body>
+</html>

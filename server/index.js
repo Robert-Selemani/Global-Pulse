@@ -25,19 +25,38 @@ const CLIENT_DIR = path.join(__dirname, '..', 'client');
 const DATA_DIR = process.env.DATA_DIR || __dirname;
 const DATA_FILE = path.join(DATA_DIR, 'data.json');
 
-// --- Admin auth configuration ---------------------------------------------
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'change-me';
+// --- Auth configuration ----------------------------------------------------
+// Accounts are stored in the database. The first account to sign up becomes
+// the super admin; everyone else is an end user. Sessions are signed cookies
+// carrying the user id.
 const SESSION_SECRET =
   process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 const COOKIE_NAME = 'gp_session';
+const ROLE_SUPER = 'super_admin';
+const ROLE_USER = 'end_user';
 
-if (!process.env.ADMIN_PASSWORD) {
-  // eslint-disable-next-line no-console
-  console.warn(
-    '[warn] ADMIN_PASSWORD is not set — using the default "change-me". ' +
-      'Set ADMIN_PASSWORD in the environment before deploying.'
-  );
+// --- Password hashing (scrypt, no external dependency) ---------------------
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16);
+  const hash = crypto.scryptSync(String(password), salt, 64);
+  return 'scrypt$' + salt.toString('hex') + '$' + hash.toString('hex');
+}
+
+function verifyPassword(password, stored) {
+  try {
+    const [scheme, saltHex, hashHex] = String(stored).split('$');
+    if (scheme !== 'scrypt') return false;
+    const hash = Buffer.from(hashHex, 'hex');
+    const test = crypto.scryptSync(String(password), Buffer.from(saltHex, 'hex'), hash.length);
+    return crypto.timingSafeEqual(hash, test);
+  } catch (_) {
+    return false;
+  }
+}
+
+function validEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || ''));
 }
 
 // ---------------------------------------------------------------------------
@@ -97,22 +116,28 @@ function makeFileStore(dataFile) {
   let cache = [];
   let nextId = 1;
   let settings = {};
+  let users = [];
+  let nextUserId = 1;
 
   function load() {
     try {
       const parsed = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
       cache = Array.isArray(parsed.submissions) ? parsed.submissions : [];
       settings = parsed.settings && typeof parsed.settings === 'object' ? parsed.settings : {};
+      users = Array.isArray(parsed.users) ? parsed.users : [];
       nextId = cache.reduce((m, r) => Math.max(m, r.id || 0), 0) + 1;
+      nextUserId = users.reduce((m, u) => Math.max(m, u.id || 0), 0) + 1;
     } catch (err) {
       cache = [];
       settings = {};
+      users = [];
       nextId = 1;
+      nextUserId = 1;
     }
   }
   function save() {
     const tmp = dataFile + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify({ submissions: cache, settings }, null, 2));
+    fs.writeFileSync(tmp, JSON.stringify({ submissions: cache, settings, users }, null, 2));
     fs.renameSync(tmp, dataFile); // atomic
   }
   return {
@@ -174,6 +199,28 @@ function makeFileStore(dataFile) {
       else settings[key] = value;
       save();
     },
+    async countUsers() {
+      return users.length;
+    },
+    async getUserByEmail(email) {
+      const e = String(email).toLowerCase();
+      return users.find((u) => u.email === e) || null;
+    },
+    async getUserById(id) {
+      return users.find((u) => u.id === Number(id)) || null;
+    },
+    async createUser({ email, passwordHash, role }) {
+      const user = {
+        id: nextUserId++,
+        email: String(email).toLowerCase(),
+        passwordHash,
+        role,
+        createdAt: Date.now(),
+      };
+      users.push(user);
+      save();
+      return { id: user.id, email: user.email, role: user.role };
+    },
   };
 }
 
@@ -228,6 +275,15 @@ function makePostgresStore(connectionString) {
       );
       await pool.query(
         `CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)`
+      );
+      await pool.query(
+        `CREATE TABLE IF NOT EXISTS users (
+           id            BIGSERIAL PRIMARY KEY,
+           email         TEXT UNIQUE NOT NULL,
+           password_hash TEXT NOT NULL,
+           role          TEXT NOT NULL,
+           created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+         )`
       );
       // eslint-disable-next-line no-console
       console.log('Storage: PostgreSQL');
@@ -294,6 +350,39 @@ function makePostgresStore(connectionString) {
           [key, value]
         );
       }
+    },
+    async countUsers() {
+      const { rows } = await pool.query('SELECT count(*)::int AS n FROM users');
+      return rows[0].n;
+    },
+    async getUserByEmail(email) {
+      const { rows } = await pool.query(
+        'SELECT id, email, password_hash, role FROM users WHERE email = $1',
+        [String(email).toLowerCase()]
+      );
+      if (!rows[0]) return null;
+      return {
+        id: Number(rows[0].id),
+        email: rows[0].email,
+        passwordHash: rows[0].password_hash,
+        role: rows[0].role,
+      };
+    },
+    async getUserById(id) {
+      const { rows } = await pool.query(
+        'SELECT id, email, role FROM users WHERE id = $1',
+        [Number(id)]
+      );
+      if (!rows[0]) return null;
+      return { id: Number(rows[0].id), email: rows[0].email, role: rows[0].role };
+    },
+    async createUser({ email, passwordHash, role }) {
+      const { rows } = await pool.query(
+        `INSERT INTO users (email, password_hash, role) VALUES ($1, $2, $3)
+           RETURNING id, email, role`,
+        [String(email).toLowerCase(), passwordHash, role]
+      );
+      return { id: Number(rows[0].id), email: rows[0].email, role: rows[0].role };
     },
   };
 }
@@ -401,6 +490,7 @@ async function codeAccepted(supplied) {
 // Sessions (signed cookies, no dependencies)
 // ---------------------------------------------------------------------------
 
+/** Token payload is "<userId>.<expiryMs>", HMAC-signed. */
 function verifyToken(token) {
   if (!token) return null;
   const idx = token.lastIndexOf('.');
@@ -415,10 +505,12 @@ function verifyToken(token) {
   const b = Buffer.from(expected);
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
   const parts = payload.split('.');
-  if (parts[0] !== 'admin') return null;
+  const userId = Number(parts[0]);
   const expiry = Number(parts[1]);
-  if (!Number.isFinite(expiry) || Date.now() > expiry) return null;
-  return { role: 'admin', expiry };
+  if (!Number.isFinite(userId) || !Number.isFinite(expiry) || Date.now() > expiry) {
+    return null;
+  }
+  return { userId, expiry };
 }
 
 function signToken(payload) {
@@ -427,6 +519,10 @@ function signToken(payload) {
     .update(payload)
     .digest('base64url');
   return payload + '.' + sig;
+}
+
+function makeSessionToken(userId) {
+  return signToken(userId + '.' + (Date.now() + SESSION_TTL_MS));
 }
 
 function parseCookies(req) {
@@ -441,8 +537,11 @@ function parseCookies(req) {
   return out;
 }
 
-function isAdmin(req) {
-  return !!verifyToken(parseCookies(req)[COOKIE_NAME]);
+/** Resolve the authenticated user for a request, or null. */
+async function currentUser(req) {
+  const tok = verifyToken(parseCookies(req)[COOKIE_NAME]);
+  if (!tok) return null;
+  return store.getUserById(tok.userId);
 }
 
 function isSecure(req) {
@@ -459,17 +558,6 @@ function sessionCookie(req, token, maxAgeSec) {
   ];
   if (isSecure(req)) attrs.push('Secure');
   return attrs.join('; ');
-}
-
-/** Constant-time password comparison. */
-function passwordMatches(candidate) {
-  const a = Buffer.from(String(candidate));
-  const b = Buffer.from(ADMIN_PASSWORD);
-  if (a.length !== b.length) {
-    crypto.timingSafeEqual(b, b);
-    return false;
-  }
-  return crypto.timingSafeEqual(a, b);
 }
 
 // --- Simple in-memory login rate limiting ---------------------------------
@@ -591,36 +679,83 @@ const server = http.createServer(async (req, res) => {
   const { pathname } = url;
 
   try {
+    const user = await currentUser(req);
+
     // --- API: session status ---
     if (req.method === 'GET' && pathname === '/api/session') {
-      sendJson(res, 200, { admin: isAdmin(req) });
+      sendJson(res, 200, {
+        authenticated: !!user,
+        email: user ? user.email : null,
+        role: user ? user.role : null,
+        isSuperAdmin: !!user && user.role === ROLE_SUPER,
+        hasUsers: (await store.countUsers()) > 0,
+      });
       return;
     }
 
-    // --- API: admin login ---
+    // --- API: sign up (first user becomes super admin) ---
+    if (req.method === 'POST' && pathname === '/api/signup') {
+      if (rateLimited(clientIp(req))) {
+        sendJson(res, 429, { error: 'Too many attempts. Try again later.' });
+        return;
+      }
+      const data = JSON.parse((await readBody(req)) || '{}');
+      const email = String(data.email || '').trim().toLowerCase();
+      const password = String(data.password || '');
+      if (!validEmail(email)) {
+        sendJson(res, 400, { error: 'Please enter a valid email address.' });
+        return;
+      }
+      if (password.length < 6) {
+        sendJson(res, 400, { error: 'Password must be at least 6 characters.' });
+        return;
+      }
+      if (await store.getUserByEmail(email)) {
+        sendJson(res, 409, { error: 'An account with that email already exists.' });
+        return;
+      }
+      const role = (await store.countUsers()) === 0 ? ROLE_SUPER : ROLE_USER;
+      const created = await store.createUser({
+        email,
+        passwordHash: hashPassword(password),
+        role,
+      });
+      const token = makeSessionToken(created.id);
+      sendJson(
+        res,
+        201,
+        { email: created.email, role: created.role, isSuperAdmin: role === ROLE_SUPER },
+        { 'Set-Cookie': sessionCookie(req, token, SESSION_TTL_MS / 1000) }
+      );
+      return;
+    }
+
+    // --- API: log in ---
     if (req.method === 'POST' && pathname === '/api/login') {
       if (rateLimited(clientIp(req))) {
         sendJson(res, 429, { error: 'Too many attempts. Try again later.' });
         return;
       }
       const data = JSON.parse((await readBody(req)) || '{}');
-      if (!passwordMatches(data.password || '')) {
-        sendJson(res, 401, { error: 'Incorrect password.' });
+      const email = String(data.email || '').trim().toLowerCase();
+      const account = await store.getUserByEmail(email);
+      if (!account || !verifyPassword(data.password || '', account.passwordHash)) {
+        sendJson(res, 401, { error: 'Incorrect email or password.' });
         return;
       }
-      const token = signToken('admin.' + (Date.now() + SESSION_TTL_MS));
+      const token = makeSessionToken(account.id);
       sendJson(
         res,
         200,
-        { admin: true },
+        { email: account.email, role: account.role, isSuperAdmin: account.role === ROLE_SUPER },
         { 'Set-Cookie': sessionCookie(req, token, SESSION_TTL_MS / 1000) }
       );
       return;
     }
 
-    // --- API: admin logout ---
+    // --- API: log out ---
     if (req.method === 'POST' && pathname === '/api/logout') {
-      sendJson(res, 200, { admin: false }, { 'Set-Cookie': sessionCookie(req, '', 0) });
+      sendJson(res, 200, { ok: true }, { 'Set-Cookie': sessionCookie(req, '', 0) });
       return;
     }
 
@@ -636,14 +771,13 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    // --- API: a participant's own submissions ---
+    // --- API: the logged-in user's own submissions ---
     if (req.method === 'GET' && pathname === '/api/mine') {
-      const pid = url.searchParams.get('participantId');
-      if (!pid) {
+      if (!user) {
         sendJson(res, 200, { submissions: [] });
         return;
       }
-      const mine = await store.listByParticipant(pid);
+      const mine = await store.listByParticipant(String(user.id));
       sendJson(res, 200, {
         submissions: mine.map((r) => ({
           id: r.id,
@@ -655,8 +789,12 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    // --- API: submit a community entry ---
+    // --- API: submit a community entry (must be logged in) ---
     if (req.method === 'POST' && pathname === '/api/submit') {
+      if (!user) {
+        sendJson(res, 401, { error: 'Please sign in to participate.' });
+        return;
+      }
       const data = JSON.parse((await readBody(req)) || '{}');
       const err = validateEntry(data);
       if (err) {
@@ -669,7 +807,7 @@ const server = http.createServer(async (req, res) => {
       }
       const community = cleanDisplay(data.community);
       const id = await store.add({
-        participantId: String(data.participantId || '').trim() || null,
+        participantId: String(user.id),
         countryId: String(data.countryId).trim(),
         countryName: String(data.countryName).trim(),
         community,
@@ -682,15 +820,16 @@ const server = http.createServer(async (req, res) => {
     // --- API: edit or withdraw one's own submission ---
     const subMatch = pathname.match(/^\/api\/submission\/(\d+)$/);
     if (subMatch) {
+      if (!user) {
+        sendJson(res, 401, { error: 'Please sign in.' });
+        return;
+      }
       const id = Number(subMatch[1]);
       const record = await store.getById(id);
-      const pid =
-        req.method === 'DELETE'
-          ? url.searchParams.get('participantId')
-          : null;
+      const owns = record && record.participantId === String(user.id);
 
       if (req.method === 'DELETE') {
-        if (!record || !pid || record.participantId !== pid) {
+        if (!owns) {
           sendJson(res, 403, { error: 'You can only withdraw your own submission.' });
           return;
         }
@@ -700,11 +839,11 @@ const server = http.createServer(async (req, res) => {
       }
 
       if (req.method === 'PUT') {
-        const data = JSON.parse((await readBody(req)) || '{}');
-        if (!record || record.participantId !== String(data.participantId || '').trim()) {
+        if (!owns) {
           sendJson(res, 403, { error: 'You can only edit your own submission.' });
           return;
         }
+        const data = JSON.parse((await readBody(req)) || '{}');
         const verr = validateEntry(data);
         if (verr) {
           sendJson(res, 400, { error: verr });
@@ -729,10 +868,10 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    // --- API: admin participation code management ---
+    // --- API: participation code management (super admin only) ---
     if (pathname === '/api/admin/code') {
-      if (!isAdmin(req)) {
-        sendJson(res, 401, { error: 'Admin login required.' });
+      if (!user || user.role !== ROLE_SUPER) {
+        sendJson(res, 403, { error: 'Super admin access required.' });
         return;
       }
       if (req.method === 'GET') {
@@ -763,6 +902,19 @@ const server = http.createServer(async (req, res) => {
     // --- Unknown API route ---
     if (pathname.startsWith('/api/')) {
       sendJson(res, 404, { error: 'Not found' });
+      return;
+    }
+
+    // --- Page routes (clean URLs -> HTML files) ---
+    const PAGES = {
+      '/': 'present.html',
+      '/present': 'present.html',
+      '/vote': 'vote.html',
+      '/login': 'login.html',
+      '/signup': 'signup.html',
+    };
+    if (req.method === 'GET' && Object.prototype.hasOwnProperty.call(PAGES, pathname)) {
+      serveStatic(req, res, '/' + PAGES[pathname]);
       return;
     }
 

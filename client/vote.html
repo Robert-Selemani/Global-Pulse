@@ -3,12 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Global Pulse — Community Map</title>
-    <meta
-      name="description"
-      content="Interactive map for visualizing and tracking communities around the world."
-    />
-    <!-- Leaflet is self-hosted (vendored) so the app never depends on a CDN. -->
+    <title>Vote — Global Pulse</title>
     <link rel="stylesheet" href="/vendor/leaflet/leaflet.css" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
@@ -18,22 +13,19 @@
         <span class="pulse-dot" aria-hidden="true"></span>
         <h1>Global Pulse</h1>
       </div>
-      <p class="tagline">Discover and track communities across the world</p>
+      <p class="tagline">Add your community to the map</p>
       <ul class="stats" id="global-stats">
         <li><strong id="stat-countries">0</strong><span>Countries</span></li>
         <li><strong id="stat-communities">0</strong><span>Communities</span></li>
         <li><strong id="stat-users">0</strong><span>Participants</span></li>
       </ul>
-      <div class="admin-area" id="admin-area">
-        <button type="button" class="admin-btn" id="admin-login-btn">
-          Admin login
-        </button>
-        <div class="admin-signedin" id="admin-signedin" hidden>
-          <span class="admin-tag">Admin</span>
-          <button type="button" class="admin-btn ghost" id="admin-logout-btn">
-            Log out
-          </button>
-        </div>
+      <div class="admin-area">
+        <a class="admin-btn ghost" href="/present">Live map</a>
+        <span class="account" id="account-box">
+          <span class="account-email" id="account-email"></span>
+          <span class="admin-tag" id="account-role" hidden>Super admin</span>
+          <button type="button" class="admin-btn ghost" id="logout-btn">Log out</button>
+        </span>
       </div>
     </header>
 
@@ -41,7 +33,6 @@
       <section class="map-panel">
         <div id="map" role="application" aria-label="World community map"></div>
 
-        <!-- Admin-only: hidden until an admin is authenticated. -->
         <div class="map-focus" id="map-focus" hidden>
           <label for="continent-select">🌍 Focus</label>
           <select id="continent-select" aria-label="Focus the map on a continent">
@@ -50,45 +41,28 @@
         </div>
 
         <div class="zoom-control">
-          <label for="zoom-slider" id="zoom-indicator" aria-live="polite"
-            >Zoom 100%</label
-          >
-          <input
-            type="range"
-            id="zoom-slider"
-            min="2"
-            max="6"
-            step="0.05"
-            value="2"
-            aria-label="Zoom level"
-          />
+          <label for="zoom-slider" id="zoom-indicator" aria-live="polite">Zoom 100%</label>
+          <input type="range" id="zoom-slider" min="2" max="6" step="0.05" value="2" aria-label="Zoom level" />
         </div>
 
         <div class="legend">
-          <span class="swatch flag" aria-hidden="true">🏳️</span> Represented
-          (shown by flag)
+          <span class="swatch flag" aria-hidden="true">🏳️</span> Represented (by flag)
           <span class="swatch inactive"></span> Not yet
         </div>
       </section>
 
       <aside class="sidebar">
-        <!-- Admin-only: participation code + QR to share with attendees -->
+        <!-- Super-admin only: participation code + QR -->
         <div class="code-panel" id="code-panel" hidden>
-          <div class="community-header">
-            <h2>Participation code</h2>
-          </div>
+          <div class="community-header"><h2>Participation code</h2></div>
           <p class="hint" id="code-status">
             No code set — participation is open to everyone.
           </p>
           <div class="code-value" id="code-value" hidden></div>
           <div class="qr-box" id="qr-box" hidden></div>
           <div class="code-actions">
-            <button type="button" class="admin-btn" id="code-generate">
-              Generate code
-            </button>
-            <button type="button" class="admin-btn ghost" id="code-disable" hidden>
-              Disable
-            </button>
+            <button type="button" class="admin-btn" id="code-generate">Generate code</button>
+            <button type="button" class="admin-btn ghost" id="code-disable" hidden>Disable</button>
           </div>
         </div>
 
@@ -120,16 +94,12 @@
           </div>
 
           <button type="submit" id="submit-btn">Add to the map</button>
-          <button type="button" class="btn-ghost" id="cancel-edit-btn" hidden>
-            Cancel edit
-          </button>
+          <button type="button" class="btn-ghost" id="cancel-edit-btn" hidden>Cancel edit</button>
           <p class="form-message" id="form-message" role="status"></p>
         </form>
 
         <div class="mine-panel" id="mine-panel" hidden>
-          <div class="community-header">
-            <h2>Your submissions</h2>
-          </div>
+          <div class="community-header"><h2>Your submissions</h2></div>
           <ul class="mine-list" id="mine-list"></ul>
         </div>
 
@@ -149,12 +119,9 @@
             <h2 id="selected-country-name">Select a country</h2>
             <span class="badge" id="selected-country-count"></span>
           </div>
-          <button type="button" class="btn-ghost" id="clear-selection" hidden>
-            Clear selection
-          </button>
+          <button type="button" class="btn-ghost" id="clear-selection" hidden>Clear selection</button>
           <p class="hint" id="community-hint">
-            Click a country on the map, or pick one above, to see its
-            communities.
+            Click a country on the map, or pick one above, to see its communities.
           </p>
           <ul class="community-list" id="community-list"></ul>
         </div>
@@ -163,43 +130,14 @@
 
     <footer class="app-footer">
       Developed by
-      <a
-        href="https://www.linkedin.com/in/robert-selemani/"
-        target="_blank"
-        rel="noopener noreferrer"
+      <a href="https://www.linkedin.com/in/robert-selemani/" target="_blank" rel="noopener noreferrer"
         >Robert Selemani</a
       >
     </footer>
 
-    <!-- Admin login modal -->
-    <div class="modal-overlay" id="login-modal" hidden>
-      <form class="modal" id="login-form" autocomplete="off">
-        <h2>Admin login</h2>
-        <p class="modal-hint">
-          Sign in to focus the map on a continent. Participants can always zoom
-          and pan freely.
-        </p>
-        <label for="admin-password">Password</label>
-        <input
-          id="admin-password"
-          type="password"
-          autocomplete="current-password"
-          required
-        />
-        <p class="form-message" id="login-message" role="status"></p>
-        <div class="modal-actions">
-          <button type="button" class="admin-btn ghost" id="login-cancel">
-            Cancel
-          </button>
-          <button type="submit" class="admin-btn" id="login-submit">
-            Sign in
-          </button>
-        </div>
-      </form>
-    </div>
-
     <script src="/vendor/leaflet/leaflet.js"></script>
     <script src="/vendor/qrcode/qrcode.js"></script>
-    <script src="/app.js"></script>
+    <script src="/mapcore.js"></script>
+    <script src="/vote.js"></script>
   </body>
 </html>
