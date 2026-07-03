@@ -72,8 +72,28 @@
       </section>
 
       <aside class="sidebar">
+        <!-- Admin-only: participation code + QR to share with attendees -->
+        <div class="code-panel" id="code-panel" hidden>
+          <div class="community-header">
+            <h2>Participation code</h2>
+          </div>
+          <p class="hint" id="code-status">
+            No code set — participation is open to everyone.
+          </p>
+          <div class="code-value" id="code-value" hidden></div>
+          <div class="qr-box" id="qr-box" hidden></div>
+          <div class="code-actions">
+            <button type="button" class="admin-btn" id="code-generate">
+              Generate code
+            </button>
+            <button type="button" class="admin-btn ghost" id="code-disable" hidden>
+              Disable
+            </button>
+          </div>
+        </div>
+
         <form id="entry-form" class="entry-form" autocomplete="off">
-          <h2>Add your community</h2>
+          <h2 id="form-title">Add your community</h2>
           <label for="country-select">Country</label>
           <select id="country-select" name="country" required>
             <option value="" disabled selected>Select a country…</option>
@@ -89,9 +109,29 @@
             required
           />
 
+          <div id="code-field" hidden>
+            <label for="participation-input">Participation code</label>
+            <input
+              id="participation-input"
+              type="text"
+              maxlength="12"
+              placeholder="Enter the code to participate"
+            />
+          </div>
+
           <button type="submit" id="submit-btn">Add to the map</button>
+          <button type="button" class="btn-ghost" id="cancel-edit-btn" hidden>
+            Cancel edit
+          </button>
           <p class="form-message" id="form-message" role="status"></p>
         </form>
+
+        <div class="mine-panel" id="mine-panel" hidden>
+          <div class="community-header">
+            <h2>Your submissions</h2>
+          </div>
+          <ul class="mine-list" id="mine-list"></ul>
+        </div>
 
         <div class="countries-panel">
           <div class="community-header">
@@ -109,6 +149,9 @@
             <h2 id="selected-country-name">Select a country</h2>
             <span class="badge" id="selected-country-count"></span>
           </div>
+          <button type="button" class="btn-ghost" id="clear-selection" hidden>
+            Clear selection
+          </button>
           <p class="hint" id="community-hint">
             Click a country on the map, or pick one above, to see its
             communities.
@@ -156,6 +199,7 @@
     </div>
 
     <script src="/vendor/leaflet/leaflet.js"></script>
+    <script src="/vendor/qrcode/qrcode.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>

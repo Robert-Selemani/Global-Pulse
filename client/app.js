@@ -20,7 +20,29 @@ const state = {
   layersById: {}, // countryId -> Leaflet layer
   selectedId: null,
   isAdmin: false, // continent focus is admin-only
+  participantId: null, // stable per-browser id for self-service edit/withdraw
+  participationRequired: false, // is a participation code needed to submit?
+  participationCode: '', // the code this participant is using
+  editingId: null, // submission id currently being edited, or null
 };
+
+// A stable identifier per browser so participants can manage their own
+// submissions without an account.
+function getParticipantId() {
+  let id = null;
+  try {
+    id = localStorage.getItem('gp_participant');
+    if (!id) {
+      id =
+        (crypto.randomUUID && crypto.randomUUID()) ||
+        'p-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+      localStorage.setItem('gp_participant', id);
+    }
+  } catch (_) {
+    id = 'p-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+  }
+  return id;
+}
 
 const SVGNS = 'http://www.w3.org/2000/svg';
 const FLAG_BASE = 'https://flagcdn.com';
@@ -48,8 +70,24 @@ const els = {
   countriesHint: document.getElementById('countries-hint'),
   communityInput: document.getElementById('community-input'),
   form: document.getElementById('entry-form'),
+  formTitle: document.getElementById('form-title'),
   submitBtn: document.getElementById('submit-btn'),
+  cancelEditBtn: document.getElementById('cancel-edit-btn'),
   formMessage: document.getElementById('form-message'),
+  codeField: document.getElementById('code-field'),
+  participationInput: document.getElementById('participation-input'),
+  // My submissions
+  minePanel: document.getElementById('mine-panel'),
+  mineList: document.getElementById('mine-list'),
+  // Selected-country detail
+  clearSelection: document.getElementById('clear-selection'),
+  // Admin participation code
+  codePanel: document.getElementById('code-panel'),
+  codeStatus: document.getElementById('code-status'),
+  codeValue: document.getElementById('code-value'),
+  qrBox: document.getElementById('qr-box'),
+  codeGenerate: document.getElementById('code-generate'),
+  codeDisable: document.getElementById('code-disable'),
   selectedName: document.getElementById('selected-country-name'),
   selectedCount: document.getElementById('selected-country-count'),
   communityHint: document.getElementById('community-hint'),
@@ -235,33 +273,12 @@ function renderGeo() {
 }
 
 /**
- * Draw a small participant pin at each represented country's centre. Community
- * counts are intentionally NOT shown on the map — they live in the sidebar.
+ * The map shows no numeric labels — represented countries are indicated only
+ * by their flag fill. All counts live in the sidebar. Kept as a no-op so the
+ * existing call sites stay simple.
  */
 function renderLabels() {
   labelLayer.clearLayers();
-  for (const id of Object.keys(state.data.countries)) {
-    const info = state.data.countries[id];
-    if (!info.totalUsers) continue;
-    if (!inFocus(id)) continue;
-    const layer = state.layersById[id];
-    if (!layer) continue;
-
-    const center = layer.getBounds().getCenter();
-    const html =
-      '<div class="label-inner">' +
-      '<span class="user-pin" title="Participants">● ' +
-      info.totalUsers +
-      '</span>' +
-      '</div>';
-
-    const icon = L.divIcon({
-      className: 'country-label',
-      html,
-      iconSize: null,
-    });
-    L.marker(center, { icon, interactive: false }).addTo(labelLayer);
-  }
 }
 
 function refreshStyles() {
@@ -349,6 +366,7 @@ function focusContinent(name) {
 function selectCountry(id) {
   state.selectedId = id;
   els.countrySelect.value = id;
+  els.clearSelection.hidden = false;
   refreshStyles();
 
   const info = state.data.countries[id];
@@ -511,29 +529,204 @@ els.form.addEventListener('submit', async (e) => {
   if (!countryId) return setMessage('Please choose a country.', 'error');
   if (!community) return setMessage('Please enter a community name.', 'error');
 
+  const code = els.participationInput.value.trim();
+  if (state.participationRequired && !code) {
+    revealCodeField();
+    return setMessage('Enter the participation code to continue.', 'error');
+  }
+  rememberCode(code);
+
+  const editing = state.editingId;
   els.submitBtn.disabled = true;
-  setMessage('Adding…', '');
+  setMessage(editing ? 'Updating…' : 'Adding…', '');
+
+  const endpoint = editing ? '/api/submission/' + editing : '/api/submit';
+  const method = editing ? 'PUT' : 'POST';
 
   try {
-    const res = await fetch('/api/submit', {
-      method: 'POST',
+    const res = await fetch(endpoint, {
+      method,
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ countryId, countryName, community }),
+      body: JSON.stringify({
+        countryId,
+        countryName,
+        community,
+        participantId: state.participantId,
+        code,
+      }),
     });
     const payload = await res.json();
-    if (!res.ok) throw new Error(payload.error || 'Submission failed');
+    if (!res.ok) {
+      if (payload.code === 'BAD_CODE') revealCodeField();
+      throw new Error(payload.error || 'Submission failed');
+    }
 
     applyData(payload.data);
-    state.selectedId = countryId;
     selectCountry(countryId);
     els.communityInput.value = '';
-    setMessage('Added to ' + countryName + '! ✅', 'success');
+    await refreshMine();
+    if (editing) {
+      exitEditMode();
+      setMessage('Submission updated ✅', 'success');
+    } else {
+      setMessage('Added to ' + countryName + '! ✅', 'success');
+    }
   } catch (err) {
     setMessage(err.message, 'error');
   } finally {
     els.submitBtn.disabled = false;
   }
 });
+
+// ---------------------------------------------------------------------------
+// Participation code (participant side)
+// ---------------------------------------------------------------------------
+
+function rememberCode(code) {
+  state.participationCode = code;
+  try {
+    if (code) localStorage.setItem('gp_code', code);
+  } catch (_) {
+    /* ignore */
+  }
+}
+
+function revealCodeField() {
+  els.codeField.hidden = false;
+  els.participationInput.focus();
+}
+
+function applyParticipationConfig(required) {
+  state.participationRequired = required;
+  // Show the code field only when a code is required.
+  els.codeField.hidden = !required;
+}
+
+// ---------------------------------------------------------------------------
+// Participant self-service: view / edit / withdraw own submissions
+// ---------------------------------------------------------------------------
+
+async function refreshMine() {
+  try {
+    const res = await fetch('/api/mine?participantId=' + encodeURIComponent(state.participantId));
+    const { submissions } = await res.json();
+    renderMine(submissions || []);
+  } catch (_) {
+    /* ignore */
+  }
+}
+
+function renderMine(subs) {
+  els.mineList.innerHTML = '';
+  els.minePanel.hidden = subs.length === 0;
+  if (!subs.length) return;
+
+  const frag = document.createDocumentFragment();
+  for (const s of subs) {
+    const li = document.createElement('li');
+    li.className = 'mine-row';
+
+    const label = document.createElement('span');
+    label.className = 'mine-label';
+    const iso2 = state.flags[s.countryId];
+    if (iso2) {
+      const flag = document.createElement('img');
+      flag.className = 'row-flag';
+      flag.src = FLAG_BASE + '/24x18/' + iso2 + '.png';
+      flag.alt = '';
+      label.appendChild(flag);
+    }
+    label.appendChild(
+      document.createTextNode(s.community + ' · ' + s.countryName)
+    );
+
+    const actions = document.createElement('span');
+    actions.className = 'mine-actions';
+    const editBtn = document.createElement('button');
+    editBtn.type = 'button';
+    editBtn.className = 'mini-btn';
+    editBtn.textContent = 'Edit';
+    editBtn.addEventListener('click', () => startEdit(s));
+    const delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.className = 'mini-btn danger';
+    delBtn.textContent = 'Withdraw';
+    delBtn.addEventListener('click', () => withdraw(s));
+    actions.appendChild(editBtn);
+    actions.appendChild(delBtn);
+
+    li.appendChild(label);
+    li.appendChild(actions);
+    frag.appendChild(li);
+  }
+  els.mineList.appendChild(frag);
+}
+
+function startEdit(sub) {
+  state.editingId = sub.id;
+  els.countrySelect.value = sub.countryId;
+  els.communityInput.value = sub.community;
+  els.formTitle.textContent = 'Edit your submission';
+  els.submitBtn.textContent = 'Update';
+  els.cancelEditBtn.hidden = false;
+  selectCountry(sub.countryId);
+  els.communityInput.focus();
+  setMessage('Editing your submission…', '');
+}
+
+function exitEditMode() {
+  state.editingId = null;
+  els.formTitle.textContent = 'Add your community';
+  els.submitBtn.textContent = 'Add to the map';
+  els.cancelEditBtn.hidden = true;
+  els.communityInput.value = '';
+}
+
+els.cancelEditBtn.addEventListener('click', () => {
+  exitEditMode();
+  setMessage('', '');
+});
+
+async function withdraw(sub) {
+  if (!window.confirm('Withdraw your submission "' + sub.community + '"?')) return;
+  try {
+    const res = await fetch(
+      '/api/submission/' +
+        sub.id +
+        '?participantId=' +
+        encodeURIComponent(state.participantId),
+      { method: 'DELETE' }
+    );
+    const payload = await res.json();
+    if (!res.ok) throw new Error(payload.error || 'Could not withdraw');
+    if (state.editingId === sub.id) exitEditMode();
+    applyData(payload.data);
+    await refreshMine();
+    setMessage('Submission withdrawn.', 'success');
+  } catch (err) {
+    setMessage(err.message, 'error');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Clear selection
+// ---------------------------------------------------------------------------
+
+function clearSelection() {
+  state.selectedId = null;
+  els.countrySelect.value = '';
+  els.clearSelection.hidden = true;
+  els.selectedName.textContent = 'Select a country';
+  els.selectedCount.textContent = '';
+  els.communityHint.style.display = 'block';
+  els.communityHint.textContent =
+    'Click a country on the map, or pick one above, to see its communities.';
+  els.communityList.innerHTML = '';
+  refreshStyles();
+  renderCountriesList();
+}
+
+els.clearSelection.addEventListener('click', clearSelection);
 
 // ---------------------------------------------------------------------------
 // Admin authentication (continent focus is admin-only)
@@ -545,6 +738,8 @@ function setAdmin(isAdmin) {
   els.mapFocus.hidden = !isAdmin;
   els.adminLoginBtn.hidden = isAdmin;
   els.adminSignedin.hidden = !isAdmin;
+  els.codePanel.hidden = !isAdmin;
+  if (isAdmin) loadAdminCode();
 
   // Leaving admin mode resets any continent focus back to the whole world so
   // participants are never left on a filtered view.
@@ -553,6 +748,86 @@ function setAdmin(isAdmin) {
     focusContinent('');
   }
 }
+
+// ---------------------------------------------------------------------------
+// Admin: participation code + QR
+// ---------------------------------------------------------------------------
+
+/** Render a QR code (as an <img>) for the given text into a container. */
+function renderQr(container, text) {
+  container.innerHTML = '';
+  try {
+    const qr = qrcode(0, 'M'); // type 0 = auto-size, medium error correction
+    qr.addData(text);
+    qr.make();
+    container.innerHTML = qr.createImgTag(5, 8); // cellSize, margin
+    const img = container.querySelector('img');
+    if (img) img.alt = 'QR code to join';
+  } catch (_) {
+    container.textContent = text;
+  }
+}
+
+function joinUrl(code) {
+  return location.origin + '/?code=' + encodeURIComponent(code);
+}
+
+function renderAdminCode(code) {
+  if (code) {
+    els.codeStatus.textContent = 'Attendees enter this code (or scan the QR) to participate:';
+    els.codeValue.textContent = code;
+    els.codeValue.hidden = false;
+    els.qrBox.hidden = false;
+    renderQr(els.qrBox, joinUrl(code));
+    els.codeDisable.hidden = false;
+    els.codeGenerate.textContent = 'Regenerate code';
+  } else {
+    els.codeStatus.textContent = 'No code set — participation is open to everyone.';
+    els.codeValue.hidden = true;
+    els.qrBox.hidden = true;
+    els.qrBox.innerHTML = '';
+    els.codeDisable.hidden = true;
+    els.codeGenerate.textContent = 'Generate code';
+  }
+}
+
+async function loadAdminCode() {
+  try {
+    const res = await fetch('/api/admin/code');
+    if (!res.ok) return;
+    const { code } = await res.json();
+    renderAdminCode(code);
+  } catch (_) {
+    /* ignore */
+  }
+}
+
+els.codeGenerate.addEventListener('click', async () => {
+  els.codeGenerate.disabled = true;
+  try {
+    const res = await fetch('/api/admin/code', { method: 'POST' });
+    const { code } = await res.json();
+    renderAdminCode(code);
+    state.participationRequired = true;
+  } catch (_) {
+    /* ignore */
+  } finally {
+    els.codeGenerate.disabled = false;
+  }
+});
+
+els.codeDisable.addEventListener('click', async () => {
+  if (!window.confirm('Disable the participation code? Anyone will be able to participate.'))
+    return;
+  try {
+    await fetch('/api/admin/code', { method: 'DELETE' });
+    renderAdminCode(null);
+    state.participationRequired = false;
+    applyParticipationConfig(false);
+  } catch (_) {
+    /* ignore */
+  }
+});
 
 async function refreshSession() {
   try {
@@ -643,8 +918,34 @@ async function boot() {
     return;
   }
 
+  // Identify this browser for self-service edit/withdraw.
+  state.participantId = getParticipantId();
+
+  // Seed the participation code from the URL (?code= from a scanned QR) or from
+  // a previous session, then learn whether a code is currently required.
+  const urlCode = new URLSearchParams(location.search).get('code');
+  let savedCode = '';
+  try {
+    savedCode = urlCode || localStorage.getItem('gp_code') || '';
+  } catch (_) {
+    savedCode = urlCode || '';
+  }
+  if (savedCode) {
+    els.participationInput.value = savedCode.trim();
+    rememberCode(savedCode.trim());
+  }
+  try {
+    const cfg = await fetch('/api/config').then((r) => r.json());
+    applyParticipationConfig(!!cfg.participationRequired);
+  } catch (_) {
+    /* ignore */
+  }
+
   // Determine whether this visitor is an admin (controls continent focus).
   await refreshSession();
+
+  // Load this participant's own submissions (edit/withdraw list).
+  await refreshMine();
 
   // Live updates so an audience sees each other's entries appear.
   setInterval(async () => {

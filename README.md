@@ -23,11 +23,12 @@ Existing polling platforms have two big weaknesses this tool fixes:
 | --- | --- |
 | **Country selection** | Choose from a predefined list (dropdown or click the map). |
 | **Community input** | Free-text field; new communities are catalogued automatically. |
-| **Flag fill** | Represented countries are filled with their **national flag**; others stay neutral grey. |
-| **Participant pin** | Total users who selected each country, pinned at its centre. |
+| **Flag fill** | Represented countries are filled with their **national flag**; others stay neutral grey. The map shows no numbers — all counts live in the sidebar. |
 | **Counts in the sidebar** | Per-country community + participant counts live in the sidebar, not on the map. |
 | **Always-on country list** | A "Countries represented" panel always lists every represented country and its counts — even while a country is selected for entry. |
-| **Selected-country detail** | Lists every unique community in the selected country with member counts. |
+| **Selected-country detail** | Lists every unique community in the selected country with member counts. Includes a **Clear selection** button. |
+| **Self-service edit/withdraw** | Participants can **edit** or **withdraw** their own submissions (tracked by an anonymous per-browser id — no account needed). |
+| **Participation code + QR** | An admin can generate a **participation code** and **QR code** for attendees to join; when set, a valid code is required to submit. |
 | **Deduplication & normalization** | `AI Eswatini`, `ai eswatini`, and `ai-eswatini!` collapse to one community (case-insensitive, punctuation/whitespace-insensitive). |
 | **Live updates** | The map polls the server so an audience sees entries appear in near real-time. |
 | **Admin continent focus** | A logged-in admin can focus the map on a continent (zoom + dim others + filter the country list). |
@@ -35,12 +36,14 @@ Existing polling platforms have two big weaknesses this tool fixes:
 
 ## Roles
 
-- **Participants (default):** add communities, browse the sidebar, and freely
-  **zoom and pan** the map. A live zoom-percentage readout helps them dial in
-  their view. They do **not** see the continent-focus control.
+- **Participants (default):** add communities, **edit or withdraw their own
+  submissions**, browse the sidebar, and freely **zoom and pan** the map (with
+  a custom-percentage slider). When a participation code is set, they enter it
+  (or arrive via the QR link) to submit. They do **not** see the
+  continent-focus control.
 - **Admin (password-protected):** everything above, plus a **continent-focus**
-  control that zooms the map to a continent, dims countries elsewhere, and
-  filters the country picker. Sign in via **Admin login** in the header.
+  control and a **participation-code + QR** panel (generate/regenerate/disable
+  the code attendees use to join). Sign in via **Admin login** in the header.
 
 Set the admin password with the `ADMIN_PASSWORD` environment variable.
 
@@ -55,6 +58,7 @@ Global-Pulse/
 │   ├── styles.css       # Styling
 │   ├── app.js           # Leaflet map + sidebar + admin logic
 │   ├── vendor/leaflet/  # Self-hosted Leaflet (no CDN dependency)
+│   ├── vendor/qrcode/   # Self-hosted QR-code generator
 │   └── data/
 │       ├── countries.geo.json   # World country polygons (ISO A3 ids)
 │       ├── continents.json      # ISO A3 → continent mapping
@@ -80,10 +84,15 @@ Global-Pulse/
 | Method | Path | Description |
 | --- | --- | --- |
 | `GET` | `/api/data` | Aggregated per-country communities & counts. |
-| `POST` | `/api/submit` | Add a `{ countryId, countryName, community }` entry. |
+| `GET` | `/api/config` | Whether a participation code is currently required. |
+| `POST` | `/api/submit` | Add an entry `{ countryId, countryName, community, participantId, code }`. |
+| `GET` | `/api/mine?participantId=` | The caller's own submissions (for edit/withdraw). |
+| `PUT` | `/api/submission/:id` | Edit one's own submission (ownership by `participantId`). |
+| `DELETE` | `/api/submission/:id?participantId=` | Withdraw one's own submission. |
 | `GET` | `/api/session` | Whether the caller is an authenticated admin. |
 | `POST` | `/api/login` | Admin login with `{ password }`; sets a session cookie. |
 | `POST` | `/api/logout` | Clears the admin session. |
+| `GET`/`POST`/`DELETE` | `/api/admin/code` | Admin: read / generate / disable the participation code. |
 | `GET` | `/api/health` | Liveness + submission count. |
 
 ### Environment variables

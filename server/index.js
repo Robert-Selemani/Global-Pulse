@@ -65,31 +65,54 @@ function cleanDisplay(name) {
   return String(name).replace(/\s+/g, ' ').trim();
 }
 
+/** Validate a submission/edit payload; returns an error string or null. */
+function validateEntry(data) {
+  const countryId = String(data.countryId || '').trim();
+  const countryName = String(data.countryName || '').trim();
+  const community = cleanDisplay(data.community || '');
+  if (!countryId || !countryName) return 'A country selection is required.';
+  if (!community) return 'A community name is required.';
+  if (community.length > 120) return 'Community name is too long.';
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Storage backends
 // ---------------------------------------------------------------------------
 
 /**
  * Both stores expose the same async interface:
- *   init()   -> prepare the backend
- *   add(rec) -> persist one submission
- *   all()    -> [{ countryId, countryName, community, normalized }, ...]
- *   count()  -> number of submissions
+ *   init()                     -> prepare the backend
+ *   add(rec)                   -> persist a submission, returns its id
+ *   all()                      -> all submissions (with id, participantId)
+ *   count()                    -> number of submissions
+ *   getById(id)                -> one submission or null
+ *   update(id, fields)         -> update a submission
+ *   remove(id)                 -> delete a submission
+ *   listByParticipant(pid)     -> a participant's own submissions
+ *   getSetting(key)/setSetting -> small key/value store (participation code)
  */
 
 function makeFileStore(dataFile) {
   let cache = [];
+  let nextId = 1;
+  let settings = {};
+
   function load() {
     try {
       const parsed = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
-      return Array.isArray(parsed.submissions) ? parsed.submissions : [];
+      cache = Array.isArray(parsed.submissions) ? parsed.submissions : [];
+      settings = parsed.settings && typeof parsed.settings === 'object' ? parsed.settings : {};
+      nextId = cache.reduce((m, r) => Math.max(m, r.id || 0), 0) + 1;
     } catch (err) {
-      return [];
+      cache = [];
+      settings = {};
+      nextId = 1;
     }
   }
   function save() {
     const tmp = dataFile + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify({ submissions: cache }, null, 2));
+    fs.writeFileSync(tmp, JSON.stringify({ submissions: cache, settings }, null, 2));
     fs.renameSync(tmp, dataFile); // atomic
   }
   return {
@@ -99,12 +122,15 @@ function makeFileStore(dataFile) {
       } catch (_) {
         /* ignore */
       }
-      cache = load();
+      load();
       // eslint-disable-next-line no-console
       console.log('Storage: JSON file at ' + dataFile);
     },
     async add(rec) {
+      const id = nextId++;
       cache.push({
+        id,
+        participantId: rec.participantId || null,
         countryId: rec.countryId,
         countryName: rec.countryName,
         community: rec.community,
@@ -112,12 +138,41 @@ function makeFileStore(dataFile) {
         ts: Date.now(),
       });
       save();
+      return id;
     },
     async all() {
       return cache.slice();
     },
     async count() {
       return cache.length;
+    },
+    async getById(id) {
+      return cache.find((r) => r.id === id) || null;
+    },
+    async update(id, fields) {
+      const rec = cache.find((r) => r.id === id);
+      if (!rec) return false;
+      Object.assign(rec, fields);
+      save();
+      return true;
+    },
+    async remove(id) {
+      const before = cache.length;
+      cache = cache.filter((r) => r.id !== id);
+      if (cache.length === before) return false;
+      save();
+      return true;
+    },
+    async listByParticipant(pid) {
+      return cache.filter((r) => r.participantId === pid);
+    },
+    async getSetting(key) {
+      return Object.prototype.hasOwnProperty.call(settings, key) ? settings[key] : null;
+    },
+    async setSetting(key, value) {
+      if (value === null) delete settings[key];
+      else settings[key] = value;
+      save();
     },
   };
 }
@@ -139,47 +194,106 @@ function makePostgresStore(connectionString) {
 
   const pool = new Pool({ connectionString, ssl });
 
+  function mapRow(r) {
+    return {
+      id: Number(r.id),
+      participantId: r.participant_id,
+      countryId: r.country_id,
+      countryName: r.country_name,
+      community: r.community,
+      normalized: r.normalized,
+    };
+  }
+
   return {
     async init() {
       await pool.query(
         `CREATE TABLE IF NOT EXISTS submissions (
-           id           BIGSERIAL PRIMARY KEY,
-           country_id   TEXT NOT NULL,
-           country_name TEXT NOT NULL,
-           community    TEXT NOT NULL,
-           normalized   TEXT NOT NULL,
-           created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+           id             BIGSERIAL PRIMARY KEY,
+           participant_id TEXT,
+           country_id     TEXT NOT NULL,
+           country_name   TEXT NOT NULL,
+           community      TEXT NOT NULL,
+           normalized     TEXT NOT NULL,
+           created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
          )`
       );
+      // Add the column if upgrading from an older schema.
+      await pool.query('ALTER TABLE submissions ADD COLUMN IF NOT EXISTS participant_id TEXT');
       await pool.query(
-        `CREATE INDEX IF NOT EXISTS idx_submissions_country
-           ON submissions (country_id)`
+        `CREATE INDEX IF NOT EXISTS idx_submissions_country ON submissions (country_id)`
+      );
+      await pool.query(
+        `CREATE INDEX IF NOT EXISTS idx_submissions_participant ON submissions (participant_id)`
+      );
+      await pool.query(
+        `CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)`
       );
       // eslint-disable-next-line no-console
       console.log('Storage: PostgreSQL');
     },
     async add(rec) {
-      await pool.query(
-        `INSERT INTO submissions (country_id, country_name, community, normalized)
-         VALUES ($1, $2, $3, $4)`,
-        [rec.countryId, rec.countryName, rec.community, rec.normalized]
+      const { rows } = await pool.query(
+        `INSERT INTO submissions (participant_id, country_id, country_name, community, normalized)
+         VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+        [rec.participantId || null, rec.countryId, rec.countryName, rec.community, rec.normalized]
       );
+      return Number(rows[0].id);
     },
     async all() {
       const { rows } = await pool.query(
-        `SELECT country_id, country_name, community, normalized
+        `SELECT id, participant_id, country_id, country_name, community, normalized
            FROM submissions ORDER BY id`
       );
-      return rows.map((r) => ({
-        countryId: r.country_id,
-        countryName: r.country_name,
-        community: r.community,
-        normalized: r.normalized,
-      }));
+      return rows.map(mapRow);
     },
     async count() {
       const { rows } = await pool.query('SELECT count(*)::int AS n FROM submissions');
       return rows[0].n;
+    },
+    async getById(id) {
+      const { rows } = await pool.query(
+        `SELECT id, participant_id, country_id, country_name, community, normalized
+           FROM submissions WHERE id = $1`,
+        [id]
+      );
+      return rows[0] ? mapRow(rows[0]) : null;
+    },
+    async update(id, f) {
+      const { rowCount } = await pool.query(
+        `UPDATE submissions
+            SET country_id = $2, country_name = $3, community = $4, normalized = $5
+          WHERE id = $1`,
+        [id, f.countryId, f.countryName, f.community, f.normalized]
+      );
+      return rowCount > 0;
+    },
+    async remove(id) {
+      const { rowCount } = await pool.query('DELETE FROM submissions WHERE id = $1', [id]);
+      return rowCount > 0;
+    },
+    async listByParticipant(pid) {
+      const { rows } = await pool.query(
+        `SELECT id, participant_id, country_id, country_name, community, normalized
+           FROM submissions WHERE participant_id = $1 ORDER BY id`,
+        [pid]
+      );
+      return rows.map(mapRow);
+    },
+    async getSetting(key) {
+      const { rows } = await pool.query('SELECT value FROM settings WHERE key = $1', [key]);
+      return rows[0] ? rows[0].value : null;
+    },
+    async setSetting(key, value) {
+      if (value === null) {
+        await pool.query('DELETE FROM settings WHERE key = $1', [key]);
+      } else {
+        await pool.query(
+          `INSERT INTO settings (key, value) VALUES ($1, $2)
+             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+          [key, value]
+        );
+      }
     },
   };
 }
@@ -252,6 +366,35 @@ function aggregate(rows) {
 
 async function computeData() {
   return aggregate(await store.all());
+}
+
+// ---------------------------------------------------------------------------
+// Participation code
+// ---------------------------------------------------------------------------
+
+const CODE_KEY = 'participation_code';
+
+/** Generate a short, human-friendly code (no ambiguous characters). */
+function generateCode() {
+  const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  let out = '';
+  const bytes = crypto.randomBytes(6);
+  for (let i = 0; i < 6; i++) out += alphabet[bytes[i] % alphabet.length];
+  return out;
+}
+
+async function getActiveCode() {
+  return store.getSetting(CODE_KEY);
+}
+
+/**
+ * A code is only required once an admin has set one. When required, the
+ * supplied code must match (case-insensitively).
+ */
+async function codeAccepted(supplied) {
+  const active = await getActiveCode();
+  if (!active) return true; // participation open until a code is set
+  return String(supplied || '').trim().toUpperCase() === active;
 }
 
 // ---------------------------------------------------------------------------
@@ -487,34 +630,127 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    // --- API: public config (whether a participation code is required) ---
+    if (req.method === 'GET' && pathname === '/api/config') {
+      sendJson(res, 200, { participationRequired: !!(await getActiveCode()) });
+      return;
+    }
+
+    // --- API: a participant's own submissions ---
+    if (req.method === 'GET' && pathname === '/api/mine') {
+      const pid = url.searchParams.get('participantId');
+      if (!pid) {
+        sendJson(res, 200, { submissions: [] });
+        return;
+      }
+      const mine = await store.listByParticipant(pid);
+      sendJson(res, 200, {
+        submissions: mine.map((r) => ({
+          id: r.id,
+          countryId: r.countryId,
+          countryName: r.countryName,
+          community: r.community,
+        })),
+      });
+      return;
+    }
+
     // --- API: submit a community entry ---
     if (req.method === 'POST' && pathname === '/api/submit') {
       const data = JSON.parse((await readBody(req)) || '{}');
-      const countryId = String(data.countryId || '').trim();
-      const countryName = String(data.countryName || '').trim();
-      const community = cleanDisplay(data.community || '');
-
-      if (!countryId || !countryName) {
-        sendJson(res, 400, { error: 'A country selection is required.' });
+      const err = validateEntry(data);
+      if (err) {
+        sendJson(res, 400, { error: err });
         return;
       }
-      if (!community) {
-        sendJson(res, 400, { error: 'A community name is required.' });
+      if (!(await codeAccepted(data.code))) {
+        sendJson(res, 403, { error: 'Invalid participation code.', code: 'BAD_CODE' });
         return;
       }
-      if (community.length > 120) {
-        sendJson(res, 400, { error: 'Community name is too long.' });
-        return;
-      }
-
-      await store.add({
-        countryId,
-        countryName,
+      const community = cleanDisplay(data.community);
+      const id = await store.add({
+        participantId: String(data.participantId || '').trim() || null,
+        countryId: String(data.countryId).trim(),
+        countryName: String(data.countryName).trim(),
         community,
         normalized: normalizeCommunity(community),
       });
+      sendJson(res, 201, { ok: true, id, data: await computeData() });
+      return;
+    }
 
-      sendJson(res, 201, { ok: true, data: await computeData() });
+    // --- API: edit or withdraw one's own submission ---
+    const subMatch = pathname.match(/^\/api\/submission\/(\d+)$/);
+    if (subMatch) {
+      const id = Number(subMatch[1]);
+      const record = await store.getById(id);
+      const pid =
+        req.method === 'DELETE'
+          ? url.searchParams.get('participantId')
+          : null;
+
+      if (req.method === 'DELETE') {
+        if (!record || !pid || record.participantId !== pid) {
+          sendJson(res, 403, { error: 'You can only withdraw your own submission.' });
+          return;
+        }
+        await store.remove(id);
+        sendJson(res, 200, { ok: true, data: await computeData() });
+        return;
+      }
+
+      if (req.method === 'PUT') {
+        const data = JSON.parse((await readBody(req)) || '{}');
+        if (!record || record.participantId !== String(data.participantId || '').trim()) {
+          sendJson(res, 403, { error: 'You can only edit your own submission.' });
+          return;
+        }
+        const verr = validateEntry(data);
+        if (verr) {
+          sendJson(res, 400, { error: verr });
+          return;
+        }
+        if (!(await codeAccepted(data.code))) {
+          sendJson(res, 403, { error: 'Invalid participation code.', code: 'BAD_CODE' });
+          return;
+        }
+        const community = cleanDisplay(data.community);
+        await store.update(id, {
+          countryId: String(data.countryId).trim(),
+          countryName: String(data.countryName).trim(),
+          community,
+          normalized: normalizeCommunity(community),
+        });
+        sendJson(res, 200, { ok: true, data: await computeData() });
+        return;
+      }
+
+      sendJson(res, 405, { error: 'Method not allowed' });
+      return;
+    }
+
+    // --- API: admin participation code management ---
+    if (pathname === '/api/admin/code') {
+      if (!isAdmin(req)) {
+        sendJson(res, 401, { error: 'Admin login required.' });
+        return;
+      }
+      if (req.method === 'GET') {
+        sendJson(res, 200, { code: await getActiveCode() });
+        return;
+      }
+      if (req.method === 'POST') {
+        const code = generateCode();
+        await store.setSetting(CODE_KEY, code);
+        sendJson(res, 200, { code });
+        return;
+      }
+      if (req.method === 'DELETE') {
+        await store.setSetting(CODE_KEY, null);
+        sendJson(res, 200, { code: null });
+        return;
+      }
+      sendJson(res, 405, { error: 'Method not allowed' });
       return;
     }
 
