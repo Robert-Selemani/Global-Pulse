@@ -1,0 +1,12 @@
+# Runtime data (regenerated on submissions)
+server/data.json
+server/data.json.tmp
+
+# Dependencies (none required, but just in case)
+node_modules/
+
+# OS / editor cruft
+.DS_Store
+*.log
+.vscode/
+.idea/

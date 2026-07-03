@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Global Pulse — Community Map</title>
+    <meta
+      name="description"
+      content="Interactive map for visualizing and tracking communities around the world."
+    />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand">
+        <span class="pulse-dot" aria-hidden="true"></span>
+        <h1>Global Pulse</h1>
+      </div>
+      <p class="tagline">Discover and track communities across the world</p>
+      <ul class="stats" id="global-stats">
+        <li><strong id="stat-countries">0</strong><span>Countries</span></li>
+        <li><strong id="stat-communities">0</strong><span>Communities</span></li>
+        <li><strong id="stat-users">0</strong><span>Participants</span></li>
+      </ul>
+    </header>
+
+    <main class="layout">
+      <section class="map-panel">
+        <div id="map" role="application" aria-label="World community map"></div>
+        <div class="legend">
+          <span class="swatch active"></span> Has communities
+          <span class="swatch inactive"></span> No communities yet
+        </div>
+      </section>
+
+      <aside class="sidebar">
+        <form id="entry-form" class="entry-form" autocomplete="off">
+          <h2>Add your community</h2>
+          <label for="country-select">Country</label>
+          <select id="country-select" name="country" required>
+            <option value="" disabled selected>Select a country…</option>
+          </select>
+
+          <label for="community-input">Community name</label>
+          <input
+            id="community-input"
+            name="community"
+            type="text"
+            maxlength="120"
+            placeholder="e.g. AI Eswatini"
+            required
+          />
+
+          <button type="submit" id="submit-btn">Add to the map</button>
+          <p class="form-message" id="form-message" role="status"></p>
+        </form>
+
+        <div class="community-panel">
+          <div class="community-header">
+            <h2 id="selected-country-name">Select a country</h2>
+            <span class="badge" id="selected-country-count"></span>
+          </div>
+          <p class="hint" id="community-hint">
+            Click a country on the map, or pick one above, to see its
+            communities.
+          </p>
+          <ul class="community-list" id="community-list"></ul>
+        </div>
+      </aside>
+    </main>
+
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJ7wf4YIJC9NgWFj1YyR/xxzXHYls="
+      crossorigin=""
+    ></script>
+    <script src="/app.js"></script>
+  </body>
+</html>
