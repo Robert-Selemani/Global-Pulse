@@ -33,6 +33,12 @@
     <main class="layout">
       <section class="map-panel">
         <div id="map" role="application" aria-label="World community map"></div>
+        <div class="map-focus">
+          <label for="continent-select">🌍 Focus</label>
+          <select id="continent-select" aria-label="Focus the map on a continent">
+            <option value="">Whole world</option>
+          </select>
+        </div>
         <div class="legend">
           <span class="swatch active"></span> Has communities
           <span class="swatch inactive"></span> No communities yet
@@ -75,9 +81,19 @@
       </aside>
     </main>
 
+    <footer class="app-footer">
+      Developed by
+      <a
+        href="https://www.linkedin.com/in/robert-selemani/"
+        target="_blank"
+        rel="noopener noreferrer"
+        >Robert Selemani</a
+      >
+    </footer>
+
     <script
       src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-      integrity="sha256-20nQCchB9co0qIjJ7wf4YIJC9NgWFj1YyR/xxzXHYls="
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
       crossorigin=""
     ></script>
     <script src="/app.js"></script>

@@ -73,6 +73,37 @@ Then open <http://localhost:3000>.
 
 Set a custom port with `PORT=8080 npm start`.
 
+## Deploying to Render
+
+This is a **Node web service** (not a static site) because it runs an API and
+persists submissions. A [`render.yaml`](./render.yaml) blueprint is included.
+
+### Option A — Blueprint (recommended)
+
+1. Push this repo to GitHub.
+2. In Render: **New → Blueprint**, and point it at this repository.
+3. Render reads `render.yaml` and provisions a web service **with a 1 GB
+   persistent disk** mounted at `/var/data`. Click **Apply**.
+
+### Option B — Manual
+
+1. **New → Web Service** from your GitHub repo.
+2. Runtime **Node**, Build `npm install`, Start `npm start`.
+3. Add a **Disk**: mount path `/var/data`, size 1 GB.
+4. Add an env var `DATA_DIR=/var/data`.
+
+### Data persistence
+
+Submissions are written to `DATA_DIR/data.json`. Pointing `DATA_DIR` at the
+mounted disk means data **survives deploys and restarts**. Without a disk,
+Render's filesystem is ephemeral and data resets on restart.
+
+> **Note:** Persistent disks require a **paid** instance type (the Free tier
+> does not support disks). The blueprint uses the `starter` plan. A service
+> with a disk cannot scale beyond one instance, which is expected here.
+
+Locally, `DATA_DIR` is unset, so data is stored in `server/data.json`.
+
 ## Phased implementation (per the spec)
 
 - **Phase 1 — Country representation:** country selection, map coloring, and

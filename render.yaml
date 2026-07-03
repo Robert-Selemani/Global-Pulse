@@ -1,0 +1,25 @@
+# Render Blueprint for Global Pulse
+# Docs: https://render.com/docs/blueprint-spec
+#
+# Deploys the app as a Node web service with a persistent disk so that
+# community submissions (server data) survive deploys and restarts.
+services:
+  - type: web
+    name: global-pulse
+    runtime: node
+    # Persistent disks require a paid instance type (Free does not support them).
+    plan: starter
+    region: oregon
+    branch: main
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      # Where the app writes data.json — must match the disk mountPath below.
+      - key: DATA_DIR
+        value: /var/data
+    disk:
+      name: global-pulse-data
+      mountPath: /var/data
+      sizeGB: 1

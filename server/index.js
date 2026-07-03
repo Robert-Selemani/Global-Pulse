@@ -15,7 +15,19 @@ const { URL } = require('url');
 
 const PORT = process.env.PORT || 3000;
 const CLIENT_DIR = path.join(__dirname, '..', 'client');
-const DATA_FILE = path.join(__dirname, 'data.json');
+
+// Submissions are persisted here. On Render, DATA_DIR points at a mounted
+// persistent disk (e.g. /var/data) so data survives deploys and restarts.
+// Locally it defaults to the server directory.
+const DATA_DIR = process.env.DATA_DIR || __dirname;
+const DATA_FILE = path.join(DATA_DIR, 'data.json');
+
+try {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+} catch (err) {
+  // eslint-disable-next-line no-console
+  console.error('Could not create data directory ' + DATA_DIR + ':', err.message);
+}
 
 // ---------------------------------------------------------------------------
 // Persistence

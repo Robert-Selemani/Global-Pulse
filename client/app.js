@@ -14,12 +14,26 @@ const POLL_INTERVAL_MS = 4000;
 const state = {
   data: { countries: {}, totals: {} }, // aggregated server data
   geo: null, // GeoJSON feature collection
+  continents: {}, // countryId -> continent name
+  focusContinent: '', // '' means whole world
   layersById: {}, // countryId -> Leaflet layer
   selectedId: null,
 };
 
+// Continents offered in the admin focus control, in display order.
+const CONTINENTS = [
+  'Africa',
+  'Asia',
+  'Europe',
+  'North America',
+  'South America',
+  'Oceania',
+  'Antarctica',
+];
+
 const els = {
   map: document.getElementById('map'),
+  continentSelect: document.getElementById('continent-select'),
   countrySelect: document.getElementById('country-select'),
   communityInput: document.getElementById('community-input'),
   form: document.getElementById('entry-form'),
@@ -71,9 +85,18 @@ const STYLE_SELECTED = {
   weight: 2.5,
 };
 
+const STYLE_DIMMED = { fillOpacity: 0.12, opacity: 0.25 };
+
+function inFocus(id) {
+  return !state.focusContinent || state.continents[id] === state.focusContinent;
+}
+
 function styleFor(feature) {
   const info = state.data.countries[feature.id];
   const base = info && info.totalUsers > 0 ? STYLE_ACTIVE : STYLE_INACTIVE;
+  if (!inFocus(feature.id)) {
+    return Object.assign({}, base, STYLE_DIMMED);
+  }
   if (feature.id === state.selectedId) {
     return Object.assign({}, base, STYLE_SELECTED);
   }
@@ -104,6 +127,7 @@ function renderLabels() {
   for (const id of Object.keys(state.data.countries)) {
     const info = state.data.countries[id];
     if (!info.totalUsers) continue;
+    if (!inFocus(id)) continue;
     const layer = state.layersById[id];
     if (!layer) continue;
 
@@ -155,6 +179,57 @@ function populateCountrySelect() {
   els.countrySelect.addEventListener('change', () => {
     if (els.countrySelect.value) selectCountry(els.countrySelect.value);
   });
+}
+
+/** Build the admin continent-focus dropdown (only continents that exist). */
+function populateContinentSelect() {
+  const present = new Set(Object.values(state.continents));
+  const frag = document.createDocumentFragment();
+  for (const name of CONTINENTS) {
+    if (!present.has(name)) continue;
+    const opt = document.createElement('option');
+    opt.value = name;
+    opt.textContent = name;
+    frag.appendChild(opt);
+  }
+  els.continentSelect.appendChild(frag);
+  els.continentSelect.addEventListener('change', () =>
+    focusContinent(els.continentSelect.value)
+  );
+}
+
+/**
+ * Zoom the map to a continent, restrict the country dropdown to that
+ * continent, and dim countries elsewhere. An empty value resets to the world.
+ */
+function focusContinent(name) {
+  state.focusContinent = name;
+  refreshStyles();
+  renderLabels();
+
+  // Restrict the country picker to the focused continent.
+  for (const opt of els.countrySelect.options) {
+    if (!opt.value) continue; // keep the placeholder
+    opt.hidden = !!name && state.continents[opt.value] !== name;
+  }
+  if (name && state.continents[els.countrySelect.value] !== name) {
+    els.countrySelect.value = '';
+  }
+
+  if (!name) {
+    map.setView([20, 10], 2);
+    return;
+  }
+
+  const bounds = L.latLngBounds([]);
+  for (const feature of state.geo.features) {
+    if (state.continents[feature.id] !== name) continue;
+    const layer = state.layersById[feature.id];
+    if (layer) bounds.extend(layer.getBounds());
+  }
+  if (bounds.isValid()) {
+    map.fitBounds(bounds, { padding: [30, 30], maxZoom: 5 });
+  }
 }
 
 function selectCountry(id) {
@@ -285,15 +360,18 @@ els.form.addEventListener('submit', async (e) => {
 
 async function boot() {
   try {
-    const [geo, data] = await Promise.all([
+    const [geo, data, continents] = await Promise.all([
       fetch('/data/countries.geo.json').then((r) => r.json()),
       fetchData(),
+      fetch('/data/continents.json').then((r) => r.json()),
     ]);
     state.geo = geo;
     state.data = data;
+    state.continents = continents;
 
     renderGeo();
     populateCountrySelect();
+    populateContinentSelect();
     renderLabels();
     renderStats();
   } catch (err) {
