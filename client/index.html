@@ -8,12 +8,8 @@
       name="description"
       content="Interactive map for visualizing and tracking communities around the world."
     />
-    <link
-      rel="stylesheet"
-      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-      crossorigin=""
-    />
+    <!-- Leaflet is self-hosted (vendored) so the app never depends on a CDN. -->
+    <link rel="stylesheet" href="/vendor/leaflet/leaflet.css" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -28,17 +24,35 @@
         <li><strong id="stat-communities">0</strong><span>Communities</span></li>
         <li><strong id="stat-users">0</strong><span>Participants</span></li>
       </ul>
+      <div class="admin-area" id="admin-area">
+        <button type="button" class="admin-btn" id="admin-login-btn">
+          Admin login
+        </button>
+        <div class="admin-signedin" id="admin-signedin" hidden>
+          <span class="admin-tag">Admin</span>
+          <button type="button" class="admin-btn ghost" id="admin-logout-btn">
+            Log out
+          </button>
+        </div>
+      </div>
     </header>
 
     <main class="layout">
       <section class="map-panel">
         <div id="map" role="application" aria-label="World community map"></div>
-        <div class="map-focus">
+
+        <!-- Admin-only: hidden until an admin is authenticated. -->
+        <div class="map-focus" id="map-focus" hidden>
           <label for="continent-select">🌍 Focus</label>
           <select id="continent-select" aria-label="Focus the map on a continent">
             <option value="">Whole world</option>
           </select>
         </div>
+
+        <div class="zoom-indicator" id="zoom-indicator" aria-live="polite">
+          Zoom 100%
+        </div>
+
         <div class="legend">
           <span class="swatch active"></span> Has communities
           <span class="swatch inactive"></span> No communities yet
@@ -91,11 +105,34 @@
       >
     </footer>
 
-    <script
-      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-      crossorigin=""
-    ></script>
+    <!-- Admin login modal -->
+    <div class="modal-overlay" id="login-modal" hidden>
+      <form class="modal" id="login-form" autocomplete="off">
+        <h2>Admin login</h2>
+        <p class="modal-hint">
+          Sign in to focus the map on a continent. Participants can always zoom
+          and pan freely.
+        </p>
+        <label for="admin-password">Password</label>
+        <input
+          id="admin-password"
+          type="password"
+          autocomplete="current-password"
+          required
+        />
+        <p class="form-message" id="login-message" role="status"></p>
+        <div class="modal-actions">
+          <button type="button" class="admin-btn ghost" id="login-cancel">
+            Cancel
+          </button>
+          <button type="submit" class="admin-btn" id="login-submit">
+            Sign in
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <script src="/vendor/leaflet/leaflet.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>

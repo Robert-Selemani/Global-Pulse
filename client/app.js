@@ -18,6 +18,7 @@ const state = {
   focusContinent: '', // '' means whole world
   layersById: {}, // countryId -> Leaflet layer
   selectedId: null,
+  isAdmin: false, // continent focus is admin-only
 };
 
 // Continents offered in the admin focus control, in display order.
@@ -33,7 +34,9 @@ const CONTINENTS = [
 
 const els = {
   map: document.getElementById('map'),
+  mapFocus: document.getElementById('map-focus'),
   continentSelect: document.getElementById('continent-select'),
+  zoomIndicator: document.getElementById('zoom-indicator'),
   countrySelect: document.getElementById('country-select'),
   communityInput: document.getElementById('community-input'),
   form: document.getElementById('entry-form'),
@@ -46,6 +49,15 @@ const els = {
   statCountries: document.getElementById('stat-countries'),
   statCommunities: document.getElementById('stat-communities'),
   statUsers: document.getElementById('stat-users'),
+  // Admin auth UI
+  adminLoginBtn: document.getElementById('admin-login-btn'),
+  adminSignedin: document.getElementById('admin-signedin'),
+  adminLogoutBtn: document.getElementById('admin-logout-btn'),
+  loginModal: document.getElementById('login-modal'),
+  loginForm: document.getElementById('login-form'),
+  adminPassword: document.getElementById('admin-password'),
+  loginMessage: document.getElementById('login-message'),
+  loginCancel: document.getElementById('login-cancel'),
 };
 
 // ---------------------------------------------------------------------------
@@ -67,6 +79,15 @@ L.tileLayer(
 ).addTo(map);
 
 const labelLayer = L.layerGroup().addTo(map);
+
+// Show the current zoom as a percentage relative to the min zoom, so every
+// participant can freely pick their own view (pan for the angle, zoom for the
+// level) without needing the admin's continent focus.
+function updateZoomIndicator() {
+  const pct = Math.round(map.getZoom() / map.getMinZoom() * 100);
+  els.zoomIndicator.textContent = 'Zoom ' + pct + '%';
+}
+map.on('zoomend', updateZoomIndicator);
 
 const STYLE_INACTIVE = {
   fillColor: '#33465f',
@@ -355,6 +376,85 @@ els.form.addEventListener('submit', async (e) => {
 });
 
 // ---------------------------------------------------------------------------
+// Admin authentication (continent focus is admin-only)
+// ---------------------------------------------------------------------------
+
+/** Reflect the current admin state in the UI. */
+function setAdmin(isAdmin) {
+  state.isAdmin = isAdmin;
+  els.mapFocus.hidden = !isAdmin;
+  els.adminLoginBtn.hidden = isAdmin;
+  els.adminSignedin.hidden = !isAdmin;
+
+  // Leaving admin mode resets any continent focus back to the whole world so
+  // participants are never left on a filtered view.
+  if (!isAdmin && state.focusContinent) {
+    els.continentSelect.value = '';
+    focusContinent('');
+  }
+}
+
+async function refreshSession() {
+  try {
+    const res = await fetch('/api/session');
+    const { admin } = await res.json();
+    setAdmin(!!admin);
+  } catch (_) {
+    setAdmin(false);
+  }
+}
+
+function openLoginModal() {
+  els.loginMessage.textContent = '';
+  els.adminPassword.value = '';
+  els.loginModal.hidden = false;
+  els.adminPassword.focus();
+}
+
+function closeLoginModal() {
+  els.loginModal.hidden = true;
+}
+
+els.adminLoginBtn.addEventListener('click', openLoginModal);
+els.loginCancel.addEventListener('click', closeLoginModal);
+els.loginModal.addEventListener('click', (e) => {
+  if (e.target === els.loginModal) closeLoginModal();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !els.loginModal.hidden) closeLoginModal();
+});
+
+els.loginForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const password = els.adminPassword.value;
+  els.loginMessage.textContent = 'Signing in…';
+  els.loginMessage.className = 'form-message';
+  try {
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+    });
+    const payload = await res.json();
+    if (!res.ok) throw new Error(payload.error || 'Login failed');
+    setAdmin(true);
+    closeLoginModal();
+  } catch (err) {
+    els.loginMessage.textContent = err.message;
+    els.loginMessage.className = 'form-message error';
+  }
+});
+
+els.adminLogoutBtn.addEventListener('click', async () => {
+  try {
+    await fetch('/api/logout', { method: 'POST' });
+  } catch (_) {
+    /* ignore */
+  }
+  setAdmin(false);
+});
+
+// ---------------------------------------------------------------------------
 // Boot
 // ---------------------------------------------------------------------------
 
@@ -374,10 +474,14 @@ async function boot() {
     populateContinentSelect();
     renderLabels();
     renderStats();
+    updateZoomIndicator();
   } catch (err) {
     setMessage('Could not load the map: ' + err.message, 'error');
     return;
   }
+
+  // Determine whether this visitor is an admin (controls continent focus).
+  await refreshSession();
 
   // Live updates so an audience sees each other's entries appear.
   setInterval(async () => {

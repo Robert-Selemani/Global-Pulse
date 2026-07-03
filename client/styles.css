@@ -36,12 +36,62 @@ body {
   background: linear-gradient(180deg, #16202f 0%, #111a27 100%);
   border-bottom: 1px solid var(--border);
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr auto auto;
   grid-template-areas:
-    "brand stats"
-    "tag   stats";
+    "brand stats admin"
+    "tag   stats admin";
   align-items: center;
   gap: 2px 24px;
+}
+
+.admin-area {
+  grid-area: admin;
+  display: flex;
+  align-items: center;
+}
+
+.admin-signedin {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.admin-tag {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #06210f;
+  background: var(--accent);
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+.admin-btn {
+  background: var(--accent);
+  color: #06210f;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.admin-btn:hover {
+  background: #35e389;
+}
+
+.admin-btn.ghost {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+
+.admin-btn.ghost:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .brand {
@@ -166,6 +216,20 @@ body {
 .map-focus select:focus {
   outline: none;
   border-color: var(--accent);
+}
+
+.zoom-indicator {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 500;
+  background: rgba(16, 24, 37, 0.9);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .legend {
@@ -346,6 +410,72 @@ body {
   white-space: nowrap;
 }
 
+/* ---------------- Admin login modal ---------------- */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(4, 8, 14, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.modal-overlay[hidden] {
+  display: none;
+}
+
+.modal {
+  width: 100%;
+  max-width: 380px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 22px;
+  box-shadow: var(--shadow);
+}
+
+.modal h2 {
+  margin: 0 0 6px;
+  font-size: 18px;
+}
+
+.modal-hint {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.modal label {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.modal input {
+  width: 100%;
+  padding: 10px 12px;
+  background: #0e1725;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.modal input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+}
+
 /* ---------------- Footer ---------------- */
 .app-footer {
   padding: 12px 24px;
@@ -415,9 +545,15 @@ body {
     border-top: 1px solid var(--border);
   }
   .app-header {
-    grid-template-columns: 1fr;
-    grid-template-areas: "brand" "tag" "stats";
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "brand admin"
+      "tag   admin"
+      "stats stats";
     justify-items: start;
+  }
+  .admin-area {
+    align-self: start;
   }
   .stats {
     margin-top: 8px;

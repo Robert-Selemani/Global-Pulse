@@ -5,12 +5,14 @@
  *
  * A zero-dependency Node.js HTTP server that powers the community
  * visualization tool described in the Software Functionality Document.
- * It exposes a small JSON API and serves the static client.
+ * It exposes a small JSON API, an admin session layer, and serves the
+ * static client.
  */
 
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { URL } = require('url');
 
 const PORT = process.env.PORT || 3000;
@@ -27,6 +29,24 @@ try {
 } catch (err) {
   // eslint-disable-next-line no-console
   console.error('Could not create data directory ' + DATA_DIR + ':', err.message);
+}
+
+// --- Admin auth configuration ---------------------------------------------
+// ADMIN_PASSWORD gates the continent-focus control. Set it in the environment
+// for any real deployment. SESSION_SECRET signs session cookies; if unset a
+// random one is generated per boot (which invalidates sessions on restart).
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'change-me';
+const SESSION_SECRET =
+  process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
+const COOKIE_NAME = 'gp_session';
+
+if (!process.env.ADMIN_PASSWORD) {
+  // eslint-disable-next-line no-console
+  console.warn(
+    '[warn] ADMIN_PASSWORD is not set — using the default "change-me". ' +
+      'Set ADMIN_PASSWORD in the environment before deploying.'
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -50,9 +70,9 @@ function loadSubmissions() {
   }
 }
 
-function saveSubmissions(submissions) {
+function saveSubmissions(subs) {
   const tmp = DATA_FILE + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify({ submissions }, null, 2));
+  fs.writeFileSync(tmp, JSON.stringify({ submissions: subs }, null, 2));
   fs.renameSync(tmp, DATA_FILE); // atomic write
 }
 
@@ -146,15 +166,135 @@ function aggregate() {
 }
 
 // ---------------------------------------------------------------------------
+// Sessions (signed cookies, no dependencies)
+// ---------------------------------------------------------------------------
+
+function sign(payload) {
+  const sig = crypto
+    .createHmac('sha256', SESSION_SECRET)
+    .update(payload)
+    .digest('base64url');
+  return payload + '.' + sig;
+}
+
+function verifyToken(token) {
+  if (!token) return null;
+  const idx = token.lastIndexOf('.');
+  if (idx < 0) return null;
+  const payload = token.slice(0, idx);
+  const sig = token.slice(idx + 1);
+  const expected = crypto
+    .createHmac('sha256', SESSION_SECRET)
+    .update(payload)
+    .digest('base64url');
+  const a = Buffer.from(sig);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  // payload = "admin.<expiryMs>"
+  const parts = payload.split('.');
+  if (parts[0] !== 'admin') return null;
+  const expiry = Number(parts[1]);
+  if (!Number.isFinite(expiry) || Date.now() > expiry) return null;
+  return { role: 'admin', expiry };
+}
+
+function parseCookies(req) {
+  const header = req.headers.cookie;
+  const out = {};
+  if (!header) return out;
+  for (const part of header.split(';')) {
+    const i = part.indexOf('=');
+    if (i < 0) continue;
+    out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+  }
+  return out;
+}
+
+function isAdmin(req) {
+  return !!verifyToken(parseCookies(req)[COOKIE_NAME]);
+}
+
+function isSecure(req) {
+  return (req.headers['x-forwarded-proto'] || '').split(',')[0] === 'https';
+}
+
+function sessionCookie(req, token, maxAgeSec) {
+  const attrs = [
+    COOKIE_NAME + '=' + (token || ''),
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Lax',
+    'Max-Age=' + maxAgeSec,
+  ];
+  if (isSecure(req)) attrs.push('Secure');
+  return attrs.join('; ');
+}
+
+/** Constant-time password comparison. */
+function passwordMatches(candidate) {
+  const a = Buffer.from(String(candidate));
+  const b = Buffer.from(ADMIN_PASSWORD);
+  if (a.length !== b.length) {
+    // Still run a comparison to avoid trivial length timing leaks.
+    crypto.timingSafeEqual(b, b);
+    return false;
+  }
+  return crypto.timingSafeEqual(a, b);
+}
+
+// --- Simple in-memory login rate limiting ---------------------------------
+const loginAttempts = new Map(); // ip -> { count, first }
+const RL_WINDOW_MS = 15 * 60 * 1000;
+const RL_MAX = 10;
+
+function rateLimited(ip) {
+  const now = Date.now();
+  const entry = loginAttempts.get(ip);
+  if (!entry || now - entry.first > RL_WINDOW_MS) {
+    loginAttempts.set(ip, { count: 1, first: now });
+    return false;
+  }
+  entry.count += 1;
+  return entry.count > RL_MAX;
+}
+
+function clientIp(req) {
+  const fwd = req.headers['x-forwarded-for'];
+  if (fwd) return fwd.split(',')[0].trim();
+  return req.socket.remoteAddress || 'unknown';
+}
+
+// ---------------------------------------------------------------------------
 // HTTP helpers
 // ---------------------------------------------------------------------------
 
-function sendJson(res, status, body) {
+function setSecurityHeaders(res) {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('X-XSS-Protection', '0');
+  res.setHeader(
+    'Content-Security-Policy',
+    [
+      "default-src 'self'",
+      "img-src 'self' https://*.basemaps.cartocdn.com data:",
+      "style-src 'self' 'unsafe-inline'",
+      "script-src 'self'",
+      "connect-src 'self'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "frame-ancestors 'none'",
+    ].join('; ')
+  );
+}
+
+function sendJson(res, status, body, extraHeaders) {
   const payload = JSON.stringify(body);
-  res.writeHead(status, {
-    'Content-Type': 'application/json',
-    'Cache-Control': 'no-store',
-  });
+  const headers = Object.assign(
+    { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    extraHeaders || {}
+  );
+  res.writeHead(status, headers);
   res.end(payload);
 }
 
@@ -170,9 +310,7 @@ const MIME = {
 
 function serveStatic(req, res, pathname) {
   // Prevent path traversal; resolve within CLIENT_DIR only.
-  const safePath = path
-    .normalize(pathname)
-    .replace(/^(\.\.[/\\])+/, '');
+  const safePath = path.normalize(pathname).replace(/^(\.\.[/\\])+/, '');
   let filePath = path.join(CLIENT_DIR, safePath);
   if (pathname === '/' || pathname === '') {
     filePath = path.join(CLIENT_DIR, 'index.html');
@@ -188,7 +326,14 @@ function serveStatic(req, res, pathname) {
       return;
     }
     const ext = path.extname(filePath).toLowerCase();
-    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
+    // Long-cache immutable vendored assets; keep HTML fresh.
+    const cache = pathname.startsWith('/vendor/')
+      ? 'public, max-age=31536000, immutable'
+      : 'no-cache';
+    res.writeHead(200, {
+      'Content-Type': MIME[ext] || 'application/octet-stream',
+      'Cache-Control': cache,
+    });
     res.end(data);
   });
 }
@@ -213,8 +358,51 @@ function readBody(req, limit = 1e6) {
 // ---------------------------------------------------------------------------
 
 const server = http.createServer(async (req, res) => {
+  setSecurityHeaders(res);
   const url = new URL(req.url, `http://${req.headers.host}`);
   const { pathname } = url;
+
+  // --- API: session status ---
+  if (req.method === 'GET' && pathname === '/api/session') {
+    sendJson(res, 200, { admin: isAdmin(req) });
+    return;
+  }
+
+  // --- API: admin login ---
+  if (req.method === 'POST' && pathname === '/api/login') {
+    if (rateLimited(clientIp(req))) {
+      sendJson(res, 429, { error: 'Too many attempts. Try again later.' });
+      return;
+    }
+    try {
+      const data = JSON.parse((await readBody(req)) || '{}');
+      if (!passwordMatches(data.password || '')) {
+        sendJson(res, 401, { error: 'Incorrect password.' });
+        return;
+      }
+      const token = sign('admin.' + (Date.now() + SESSION_TTL_MS));
+      sendJson(
+        res,
+        200,
+        { admin: true },
+        { 'Set-Cookie': sessionCookie(req, token, SESSION_TTL_MS / 1000) }
+      );
+    } catch (err) {
+      sendJson(res, 400, { error: 'Invalid request.' });
+    }
+    return;
+  }
+
+  // --- API: admin logout ---
+  if (req.method === 'POST' && pathname === '/api/logout') {
+    sendJson(
+      res,
+      200,
+      { admin: false },
+      { 'Set-Cookie': sessionCookie(req, '', 0) }
+    );
+    return;
+  }
 
   // --- API: read aggregated data ---
   if (req.method === 'GET' && pathname === '/api/data') {
@@ -264,6 +452,12 @@ const server = http.createServer(async (req, res) => {
   // --- API: health ---
   if (req.method === 'GET' && pathname === '/api/health') {
     sendJson(res, 200, { ok: true, submissions: submissions.length });
+    return;
+  }
+
+  // --- Unknown API route ---
+  if (pathname.startsWith('/api/')) {
+    sendJson(res, 404, { error: 'Not found' });
     return;
   }
 

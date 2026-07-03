@@ -29,27 +29,48 @@ Existing polling platforms have two big weaknesses this tool fixes:
 | **Sidebar listing** | Lists every unique community in the selected country with member counts. |
 | **Deduplication & normalization** | `AI Eswatini`, `ai eswatini`, and `ai-eswatini!` collapse to one community (case-insensitive, punctuation/whitespace-insensitive). |
 | **Live updates** | The map polls the server so an audience sees entries appear in near real-time. |
+| **Admin continent focus** | A logged-in admin can focus the map on a continent (zoom + dim others + filter the country list). |
+| **Participant zoom/pan** | Everyone can freely zoom (with a live zoom-% readout) and pan to choose their own view. |
+
+## Roles
+
+- **Participants (default):** add communities, browse the sidebar, and freely
+  **zoom and pan** the map. A live zoom-percentage readout helps them dial in
+  their view. They do **not** see the continent-focus control.
+- **Admin (password-protected):** everything above, plus a **continent-focus**
+  control that zooms the map to a continent, dims countries elsewhere, and
+  filters the country picker. Sign in via **Admin login** in the header.
+
+Set the admin password with the `ADMIN_PASSWORD` environment variable.
 
 ## Architecture
 
 ```
 Global-Pulse/
 ├── server/
-│   └── index.js         # Zero-dependency Node HTTP API + static host
+│   └── index.js         # Zero-dependency Node HTTP API + auth + static host
 ├── client/
 │   ├── index.html       # App shell
 │   ├── styles.css       # Styling
-│   ├── app.js           # Leaflet map + sidebar logic
+│   ├── app.js           # Leaflet map + sidebar + admin logic
+│   ├── vendor/leaflet/  # Self-hosted Leaflet (no CDN dependency)
 │   └── data/
-│       └── countries.geo.json   # World country polygons (ISO A3 ids)
+│       ├── countries.geo.json   # World country polygons (ISO A3 ids)
+│       └── continents.json      # ISO A3 → continent mapping
 ├── docs/                # Software Functionality Document
+├── render.yaml          # Render deploy blueprint (web service + disk)
+├── .env.example         # Documented environment variables
 └── package.json
 ```
 
 - **Backend:** plain Node.js (`node:http`) — **no dependencies, no build
-  step**. Submissions are stored in `server/data.json` and aggregated on read.
-- **Frontend:** vanilla JS + [Leaflet](https://leafletjs.com/) (loaded from
-  CDN) rendering a GeoJSON choropleth.
+  step**. Submissions are stored in `DATA_DIR/data.json` and aggregated on
+  read. Adds security headers, admin sessions (signed HttpOnly cookies), and
+  login rate limiting.
+- **Frontend:** vanilla JS + [Leaflet](https://leafletjs.com/) rendering a
+  GeoJSON choropleth. **Leaflet is vendored** into `client/vendor/` so the app
+  has no runtime CDN dependency (this also fixes CDN/SRI failures that could
+  blank the map).
 
 ### API
 
@@ -57,7 +78,21 @@ Global-Pulse/
 | --- | --- | --- |
 | `GET` | `/api/data` | Aggregated per-country communities & counts. |
 | `POST` | `/api/submit` | Add a `{ countryId, countryName, community }` entry. |
+| `GET` | `/api/session` | Whether the caller is an authenticated admin. |
+| `POST` | `/api/login` | Admin login with `{ password }`; sets a session cookie. |
+| `POST` | `/api/logout` | Clears the admin session. |
 | `GET` | `/api/health` | Liveness + submission count. |
+
+### Environment variables
+
+See [`.env.example`](./.env.example). Key ones:
+
+| Variable | Purpose |
+| --- | --- |
+| `ADMIN_PASSWORD` | Password for the admin continent-focus control. **Set this.** |
+| `SESSION_SECRET` | Signs admin session cookies. Use a long random string. |
+| `DATA_DIR` | Directory for `data.json` (a persistent disk in production). |
+| `PORT` | Port to listen on (Render sets this automatically). |
 
 ## Running locally
 
@@ -71,7 +106,14 @@ npm start            # or: node server/index.js
 
 Then open <http://localhost:3000>.
 
-Set a custom port with `PORT=8080 npm start`.
+To try the admin continent-focus control locally, set a password first:
+
+```bash
+ADMIN_PASSWORD=secret npm start
+```
+
+Then click **Admin login** in the header and enter the password. Set a custom
+port with `PORT=8080 npm start`.
 
 ## Deploying to Render
 
@@ -84,13 +126,16 @@ persists submissions. A [`render.yaml`](./render.yaml) blueprint is included.
 2. In Render: **New → Blueprint**, and point it at this repository.
 3. Render reads `render.yaml` and provisions a web service **with a 1 GB
    persistent disk** mounted at `/var/data`. Click **Apply**.
+4. When prompted, set **`ADMIN_PASSWORD`** (it's marked `sync: false` so it is
+   never stored in the repo). `SESSION_SECRET` is generated automatically.
 
 ### Option B — Manual
 
 1. **New → Web Service** from your GitHub repo.
 2. Runtime **Node**, Build `npm install`, Start `npm start`.
 3. Add a **Disk**: mount path `/var/data`, size 1 GB.
-4. Add an env var `DATA_DIR=/var/data`.
+4. Add env vars: `DATA_DIR=/var/data`, `ADMIN_PASSWORD=<your password>`, and a
+   long random `SESSION_SECRET`.
 
 ### Data persistence
 
