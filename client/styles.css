@@ -179,7 +179,7 @@ body {
 #map {
   position: absolute;
   inset: 0;
-  background: #0b111b;
+  background: #0c1d30; /* solid ocean beneath the country polygons */
 }
 
 .map-focus {
@@ -309,7 +309,7 @@ body {
 }
 
 .swatch.inactive {
-  background: #33465f;
+  background: #3c5474;
 }
 
 /* ---------------- Sidebar ---------------- */

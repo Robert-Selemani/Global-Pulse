@@ -57,9 +57,13 @@ function revealCodeField() {
   el.codeField.hidden = false;
   el.participationInput.focus();
 }
-function applyParticipationConfig(required) {
+function applyParticipationConfig(required, codeProvided) {
   state.participationRequired = required;
-  el.codeField.hidden = !required;
+  // Only ask for a code when one is required AND we don't already have it —
+  // whether from a scanned QR / shared link (?code=) or a remembered code.
+  // This prevents asking a participant to both use the link and type the code.
+  const haveCode = codeProvided || !!el.participationInput.value.trim();
+  el.codeField.hidden = !required || haveCode;
 }
 
 // ---------------------------------------------------------------------------
@@ -268,7 +272,10 @@ el.codeGenerate.addEventListener('click', async () => {
   try {
     const { code } = await fetch('/api/admin/code', { method: 'POST' }).then((r) => r.json());
     renderAdminCode(code);
-    applyParticipationConfig(true);
+    // The admin is a participant too — pre-fill the code so they aren't asked.
+    el.participationInput.value = code;
+    rememberCode(code);
+    applyParticipationConfig(true, true);
   } catch (_) {
     /* ignore */
   } finally {
@@ -349,7 +356,7 @@ function setupAccount(session) {
   }
   try {
     const cfg = await fetch('/api/config').then((r) => r.json());
-    applyParticipationConfig(!!cfg.participationRequired);
+    applyParticipationConfig(!!cfg.participationRequired, !!savedCode.trim());
   } catch (_) {
     /* ignore */
   }

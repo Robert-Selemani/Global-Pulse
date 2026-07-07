@@ -70,9 +70,11 @@ window.GP = (function () {
   }
 
   // --- Styles ---------------------------------------------------------------
-  const STYLE_INACTIVE = { fillColor: '#33465f', fillOpacity: 0.55, color: '#1c2940', weight: 1 };
-  const STYLE_ACTIVE = { fillColor: '#2fd27a', fillOpacity: 0.75, color: '#0f7a45', weight: 1 };
-  const STYLE_SELECTED = { color: '#ffffff', weight: 2.5 };
+  // Land sits on a solid ocean (no raster tiles), so fills are near-opaque and
+  // borders are thin for a clean, smooth look at world scale.
+  const STYLE_INACTIVE = { fillColor: '#3c5474', fillOpacity: 0.92, color: '#22344c', weight: 0.6 };
+  const STYLE_ACTIVE = { fillColor: '#2fd27a', fillOpacity: 0.85, color: '#0f7a45', weight: 0.8 };
+  const STYLE_SELECTED = { color: '#ffffff', weight: 2 };
   const STYLE_DIMMED = { fillOpacity: 0.12, opacity: 0.25 };
 
   function inFocus(id) {
@@ -310,6 +312,29 @@ window.GP = (function () {
     if (els.statUsers) els.statUsers.textContent = t.totalUsers || 0;
   }
 
+  // --- Country picker -------------------------------------------------------
+  /**
+   * Fill the entry form's country dropdown from the loaded geometry. Each
+   * option carries the feature id as its value and the display name as
+   * data-name, which vote.js reads on submit. Guarded so the presentation
+   * page (which has no dropdown) is unaffected.
+   */
+  function populateCountrySelect() {
+    if (!els.countrySelect) return;
+    const feats = state.geo.features
+      .filter((f) => f.id && f.properties && f.properties.name)
+      .sort((a, b) => a.properties.name.localeCompare(b.properties.name));
+    const frag = document.createDocumentFragment();
+    for (const f of feats) {
+      const opt = document.createElement('option');
+      opt.value = f.id;
+      opt.dataset.name = f.properties.name;
+      opt.textContent = f.properties.name;
+      frag.appendChild(opt);
+    }
+    els.countrySelect.appendChild(frag);
+  }
+
   // --- Continent focus (admin) ---------------------------------------------
   function populateContinentSelect() {
     if (!els.continentSelect) return;
@@ -390,10 +415,8 @@ window.GP = (function () {
       worldCopyJump: true,
       attributionControl: false,
     });
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
-      subdomains: 'abcd',
-      maxZoom: 19,
-    }).addTo(map);
+    // No raster basemap: a solid ocean (the #map background) keeps borders
+    // crisp and seam-free, and removes an external tile dependency.
     labelLayer = L.layerGroup().addTo(map);
     map.on('zoom zoomend', updateZoomIndicator);
     if (els.zoomSlider) {
@@ -411,6 +434,7 @@ window.GP = (function () {
   async function boot() {
     await loadStatic();
     renderGeo();
+    populateCountrySelect();
     populateContinentSelect();
     renderStats();
     renderCountriesList();
