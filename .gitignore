@@ -6,6 +6,9 @@ server/data.json.tmp
 .env
 .env.local
 
+# Machine-local Claude Code settings (project skills are tracked)
+.claude/settings.local.json
+
 # Dependencies (none required, but just in case)
 node_modules/
 
