@@ -378,8 +378,14 @@ window.GP = (function () {
   }
 
   // --- Data flow ------------------------------------------------------------
+  // The data endpoint is configurable so a page can scope the map to one poll
+  // (e.g. '/api/poll/<slug>/data'). Defaults to the legacy global alias.
+  let dataUrl = '/api/data';
+  function setDataUrl(url) {
+    if (url) dataUrl = url;
+  }
   async function fetchData() {
-    const res = await fetch('/api/data');
+    const res = await fetch(dataUrl);
     if (!res.ok) throw new Error('Failed to load data');
     return res.json();
   }
@@ -455,6 +461,7 @@ window.GP = (function () {
     state,
     els,
     FLAG_BASE,
+    setDataUrl,
     initMap,
     boot,
     startPolling,

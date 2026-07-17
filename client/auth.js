@@ -14,15 +14,12 @@
   const submitEl = document.getElementById('auth-submit');
 
   const params = new URLSearchParams(location.search);
-  const code = params.get('code');
-  const next = params.get('next') || '/vote';
+  const next = params.get('next') || '/dashboard';
 
   function destination() {
-    // Preserve the participation code when heading to the voting page.
-    if (code && next.startsWith('/vote')) {
-      return '/vote?code=' + encodeURIComponent(code);
-    }
-    return next;
+    // `next` already carries any poll/code query (set by the page that
+    // redirected here), so honour it as-is; otherwise go to the dashboard.
+    return next || '/dashboard';
   }
 
   // On the signup page, tell the very first visitor they'll be super admin.

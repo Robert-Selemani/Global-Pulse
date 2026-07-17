@@ -11,7 +11,8 @@
     <header class="app-header">
       <div class="brand">
         <span class="pulse-dot" aria-hidden="true"></span>
-        <h1>Global Pulse</h1>
+        <h1 id="present-title">Global Pulse</h1>
+        <span class="admin-tag archived-tag" id="present-badge" hidden>Archived</span>
       </div>
       <p class="tagline">Communities around the world — live</p>
       <ul class="stats" id="global-stats">
@@ -20,7 +21,8 @@
         <li><strong id="stat-users">0</strong><span>Participants</span></li>
       </ul>
       <div class="admin-area">
-        <a class="admin-btn" href="/vote">Participate →</a>
+        <a class="admin-btn ghost" href="/dashboard">Dashboard</a>
+        <a class="admin-btn" id="participate-link" href="/vote">Participate →</a>
       </div>
     </header>
 

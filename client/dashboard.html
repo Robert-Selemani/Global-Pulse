@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dashboard — Global Pulse</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand">
+        <span class="pulse-dot" aria-hidden="true"></span>
+        <h1>Global Pulse</h1>
+      </div>
+      <p class="tagline">Your polls</p>
+      <div class="admin-area">
+        <a class="admin-btn ghost" href="/present">Live map</a>
+        <span class="account">
+          <span class="plan-chip" id="plan-chip" hidden></span>
+          <span class="account-email" id="account-email"></span>
+          <button type="button" class="admin-btn ghost" id="logout-btn">Log out</button>
+        </span>
+      </div>
+    </header>
+
+    <main class="dash-wrap">
+      <!-- Create a poll -->
+      <section class="dash-card">
+        <h2>Create a poll</h2>
+        <form id="create-form" class="create-form" autocomplete="off">
+          <div class="create-row">
+            <input
+              id="poll-title-input"
+              type="text"
+              maxlength="120"
+              placeholder="Poll title (e.g. AI Summit 2026)"
+              required
+            />
+            <input
+              id="poll-desc-input"
+              type="text"
+              maxlength="200"
+              placeholder="Short description (optional)"
+            />
+            <button type="submit" class="admin-btn" id="create-btn">Create poll</button>
+          </div>
+          <p class="form-message" id="create-message" role="status"></p>
+        </form>
+      </section>
+
+      <!-- Active polls -->
+      <section class="dash-section">
+        <div class="community-header">
+          <h2>Active polls</h2>
+          <span class="badge" id="active-count"></span>
+        </div>
+        <p class="hint" id="active-empty" hidden>No active polls yet — create one above.</p>
+        <div class="poll-grid" id="active-polls"></div>
+      </section>
+
+      <!-- Past (archived) polls -->
+      <section class="dash-section">
+        <div class="community-header">
+          <h2>Past polls</h2>
+          <span class="badge" id="past-count"></span>
+        </div>
+        <p class="hint" id="past-empty" hidden>Archived polls will appear here.</p>
+        <div class="poll-grid" id="past-polls"></div>
+      </section>
+    </main>
+
+    <footer class="app-footer">
+      Developed by
+      <a href="https://www.linkedin.com/in/robert-selemani/" target="_blank" rel="noopener noreferrer"
+        >Robert Selemani</a
+      >
+    </footer>
+
+    <script src="/vendor/qrcode/qrcode.js"></script>
+    <script src="/dashboard.js"></script>
+  </body>
+</html>

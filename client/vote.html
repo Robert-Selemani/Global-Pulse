@@ -11,7 +11,7 @@
     <header class="app-header">
       <div class="brand">
         <span class="pulse-dot" aria-hidden="true"></span>
-        <h1>Global Pulse</h1>
+        <h1 id="poll-title">Global Pulse</h1>
       </div>
       <p class="tagline">Add your community to the map</p>
       <ul class="stats" id="global-stats">
@@ -20,10 +20,9 @@
         <li><strong id="stat-users">0</strong><span>Participants</span></li>
       </ul>
       <div class="admin-area">
-        <a class="admin-btn ghost" href="/present">Live map</a>
+        <a class="admin-btn ghost" href="/dashboard">Dashboard</a>
         <span class="account" id="account-box">
           <span class="account-email" id="account-email"></span>
-          <span class="admin-tag" id="account-role" hidden>Super admin</span>
           <button type="button" class="admin-btn ghost" id="logout-btn">Log out</button>
         </span>
       </div>
@@ -52,20 +51,6 @@
       </section>
 
       <aside class="sidebar">
-        <!-- Super-admin only: participation code + QR -->
-        <div class="code-panel" id="code-panel" hidden>
-          <div class="community-header"><h2>Participation code</h2></div>
-          <p class="hint" id="code-status">
-            No code set — participation is open to everyone.
-          </p>
-          <div class="code-value" id="code-value" hidden></div>
-          <div class="qr-box" id="qr-box" hidden></div>
-          <div class="code-actions">
-            <button type="button" class="admin-btn" id="code-generate">Generate code</button>
-            <button type="button" class="admin-btn ghost" id="code-disable" hidden>Disable</button>
-          </div>
-        </div>
-
         <form id="entry-form" class="entry-form" autocomplete="off">
           <h2 id="form-title">Add your community</h2>
           <label for="country-select">Country</label>
@@ -136,7 +121,6 @@
     </footer>
 
     <script src="/vendor/leaflet/leaflet.js"></script>
-    <script src="/vendor/qrcode/qrcode.js"></script>
     <script src="/mapcore.js"></script>
     <script src="/vote.js"></script>
   </body>

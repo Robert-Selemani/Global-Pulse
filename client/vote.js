@@ -1,22 +1,28 @@
-/* global GP, qrcode */
+/* global GP */
 'use strict';
 
 /**
- * Voting page. Requires a logged-in account. End users add / edit / withdraw
- * their own communities; super admins additionally get the continent focus and
- * the participation-code + QR panel.
+ * Voting page. Requires a logged-in account. Participants add / edit / withdraw
+ * their own communities in a specific poll, chosen with ?poll=<slug> (from the
+ * organizer's join link or QR). Poll management (code, QR, export) lives on the
+ * organizer dashboard, not here.
  */
+
+const params = new URLSearchParams(location.search);
+const POLL_SLUG = params.get('poll') || 'global-pulse';
+const urlCode = params.get('code');
+const API = '/api/poll/' + encodeURIComponent(POLL_SLUG);
 
 const state = {
   participationRequired: false,
   editingId: null,
-  isSuperAdmin: false,
+  archived: false,
 };
 
 const $ = (id) => document.getElementById(id);
 const el = {
+  pollTitle: $('poll-title'),
   accountEmail: $('account-email'),
-  accountRole: $('account-role'),
   logoutBtn: $('logout-btn'),
   form: $('entry-form'),
   formTitle: $('form-title'),
@@ -28,15 +34,7 @@ const el = {
   participationInput: $('participation-input'),
   minePanel: $('mine-panel'),
   mineList: $('mine-list'),
-  codePanel: $('code-panel'),
-  codeStatus: $('code-status'),
-  codeValue: $('code-value'),
-  qrBox: $('qr-box'),
-  codeGenerate: $('code-generate'),
-  codeDisable: $('code-disable'),
 };
-
-const urlCode = new URLSearchParams(location.search).get('code');
 
 function setMessage(text, kind) {
   el.formMessage.textContent = text;
@@ -46,9 +44,12 @@ function setMessage(text, kind) {
 // ---------------------------------------------------------------------------
 // Participation code (participant side)
 // ---------------------------------------------------------------------------
+function codeStorageKey() {
+  return 'gp_code_' + POLL_SLUG;
+}
 function rememberCode(code) {
   try {
-    if (code) localStorage.setItem('gp_code', code);
+    if (code) localStorage.setItem(codeStorageKey(), code);
   } catch (_) {
     /* ignore */
   }
@@ -59,9 +60,6 @@ function revealCodeField() {
 }
 function applyParticipationConfig(required, codeProvided) {
   state.participationRequired = required;
-  // Only ask for a code when one is required AND we don't already have it —
-  // whether from a scanned QR / shared link (?code=) or a remembered code.
-  // This prevents asking a participant to both use the link and type the code.
   const haveCode = codeProvided || !!el.participationInput.value.trim();
   el.codeField.hidden = !required || haveCode;
 }
@@ -71,6 +69,7 @@ function applyParticipationConfig(required, codeProvided) {
 // ---------------------------------------------------------------------------
 el.form.addEventListener('submit', async (e) => {
   e.preventDefault();
+  if (state.archived) return setMessage('This poll is archived and read-only.', 'error');
   const countryId = GP.els.countrySelect.value;
   const opt = GP.els.countrySelect.selectedOptions[0];
   const countryName = opt ? opt.dataset.name : '';
@@ -90,7 +89,7 @@ el.form.addEventListener('submit', async (e) => {
   el.submitBtn.disabled = true;
   setMessage(editing ? 'Updating…' : 'Adding…', '');
 
-  const endpoint = editing ? '/api/submission/' + editing : '/api/submit';
+  const endpoint = editing ? API + '/submission/' + editing : API + '/submit';
   const method = editing ? 'PUT' : 'POST';
 
   try {
@@ -103,7 +102,7 @@ el.form.addEventListener('submit', async (e) => {
     if (!res.ok) {
       if (payload.code === 'BAD_CODE') revealCodeField();
       if (res.status === 401) {
-        location.href = '/login?next=/vote';
+        location.href = '/login?next=' + encodeURIComponent('/vote?poll=' + POLL_SLUG);
         return;
       }
       throw new Error(payload.error || 'Submission failed');
@@ -130,7 +129,7 @@ el.form.addEventListener('submit', async (e) => {
 // ---------------------------------------------------------------------------
 async function refreshMine() {
   try {
-    const { submissions } = await fetch('/api/mine').then((r) => r.json());
+    const { submissions } = await fetch(API + '/mine').then((r) => r.json());
     renderMine(submissions || []);
   } catch (_) {
     /* ignore */
@@ -208,7 +207,7 @@ el.cancelEditBtn.addEventListener('click', () => {
 async function withdraw(sub) {
   if (!window.confirm('Withdraw your submission "' + sub.community + '"?')) return;
   try {
-    const res = await fetch('/api/submission/' + sub.id, { method: 'DELETE' });
+    const res = await fetch(API + '/submission/' + sub.id, { method: 'DELETE' });
     const payload = await res.json();
     if (!res.ok) throw new Error(payload.error || 'Could not withdraw');
     if (state.editingId === sub.id) exitEditMode();
@@ -219,79 +218,6 @@ async function withdraw(sub) {
     setMessage(err.message, 'error');
   }
 }
-
-// ---------------------------------------------------------------------------
-// Super admin: participation code + QR
-// ---------------------------------------------------------------------------
-function renderQr(container, text) {
-  container.innerHTML = '';
-  try {
-    const qr = qrcode(0, 'M');
-    qr.addData(text);
-    qr.make();
-    container.innerHTML = qr.createImgTag(5, 8);
-    const img = container.querySelector('img');
-    if (img) img.alt = 'QR code to join';
-  } catch (_) {
-    container.textContent = text;
-  }
-}
-function joinUrl(code) {
-  return location.origin + '/vote?code=' + encodeURIComponent(code);
-}
-function renderAdminCode(code) {
-  if (code) {
-    el.codeStatus.textContent = 'Attendees enter this code (or scan the QR) to participate:';
-    el.codeValue.textContent = code;
-    el.codeValue.hidden = false;
-    el.qrBox.hidden = false;
-    renderQr(el.qrBox, joinUrl(code));
-    el.codeDisable.hidden = false;
-    el.codeGenerate.textContent = 'Regenerate code';
-  } else {
-    el.codeStatus.textContent = 'No code set — participation is open to everyone.';
-    el.codeValue.hidden = true;
-    el.qrBox.hidden = true;
-    el.qrBox.innerHTML = '';
-    el.codeDisable.hidden = true;
-    el.codeGenerate.textContent = 'Generate code';
-  }
-}
-async function loadAdminCode() {
-  try {
-    const res = await fetch('/api/admin/code');
-    if (!res.ok) return;
-    const { code } = await res.json();
-    renderAdminCode(code);
-  } catch (_) {
-    /* ignore */
-  }
-}
-el.codeGenerate.addEventListener('click', async () => {
-  el.codeGenerate.disabled = true;
-  try {
-    const { code } = await fetch('/api/admin/code', { method: 'POST' }).then((r) => r.json());
-    renderAdminCode(code);
-    // The admin is a participant too — pre-fill the code so they aren't asked.
-    el.participationInput.value = code;
-    rememberCode(code);
-    applyParticipationConfig(true, true);
-  } catch (_) {
-    /* ignore */
-  } finally {
-    el.codeGenerate.disabled = false;
-  }
-});
-el.codeDisable.addEventListener('click', async () => {
-  if (!window.confirm('Disable the participation code? Anyone signed in can participate.')) return;
-  try {
-    await fetch('/api/admin/code', { method: 'DELETE' });
-    renderAdminCode(null);
-    applyParticipationConfig(false);
-  } catch (_) {
-    /* ignore */
-  }
-});
 
 // ---------------------------------------------------------------------------
 // Account
@@ -305,15 +231,12 @@ el.logoutBtn.addEventListener('click', async () => {
   location.href = '/present';
 });
 
-function setupAccount(session) {
-  el.accountEmail.textContent = session.email;
-  state.isSuperAdmin = !!session.isSuperAdmin;
-  if (state.isSuperAdmin) {
-    el.accountRole.hidden = false;
-    el.codePanel.hidden = false;
-    if (GP.els.mapFocus) GP.els.mapFocus.hidden = false;
-    loadAdminCode();
-  }
+function lockArchived() {
+  state.archived = true;
+  el.submitBtn.disabled = true;
+  el.communityInput.disabled = true;
+  GP.els.countrySelect.disabled = true;
+  setMessage('This poll has been archived — it is now read-only.', 'error');
 }
 
 // ---------------------------------------------------------------------------
@@ -328,11 +251,25 @@ function setupAccount(session) {
     session = { authenticated: false };
   }
   if (!session.authenticated) {
-    const next = '/vote' + (urlCode ? '?code=' + encodeURIComponent(urlCode) : '');
+    const next = '/vote?poll=' + POLL_SLUG + (urlCode ? '&code=' + encodeURIComponent(urlCode) : '');
     location.href = '/login?next=' + encodeURIComponent(next);
     return;
   }
 
+  // Resolve the poll first so a bad slug fails clearly.
+  let cfg = null;
+  try {
+    const res = await fetch(API + '/config');
+    if (!res.ok) throw new Error('Poll not found');
+    cfg = await res.json();
+  } catch (_) {
+    setMessage('That poll could not be found. Check your join link.', 'error');
+    return;
+  }
+  if (el.pollTitle) el.pollTitle.textContent = cfg.title || 'Global Pulse';
+  document.title = 'Vote — ' + (cfg.title || 'Global Pulse');
+
+  GP.setDataUrl(API + '/data');
   GP.initMap();
   try {
     await GP.boot();
@@ -341,12 +278,12 @@ function setupAccount(session) {
     return;
   }
 
-  setupAccount(session);
+  if (el.accountEmail) el.accountEmail.textContent = session.email;
 
   // Seed participation code from the URL (scanned QR) or a previous session.
   let savedCode = urlCode || '';
   try {
-    savedCode = urlCode || localStorage.getItem('gp_code') || '';
+    savedCode = urlCode || localStorage.getItem(codeStorageKey()) || '';
   } catch (_) {
     /* ignore */
   }
@@ -354,13 +291,12 @@ function setupAccount(session) {
     el.participationInput.value = savedCode.trim();
     rememberCode(savedCode.trim());
   }
-  try {
-    const cfg = await fetch('/api/config').then((r) => r.json());
-    applyParticipationConfig(!!cfg.participationRequired, !!savedCode.trim());
-  } catch (_) {
-    /* ignore */
-  }
+  applyParticipationConfig(!!cfg.participationRequired, !!savedCode.trim());
 
-  await refreshMine();
-  GP.startPolling();
+  if (cfg.status === 'archived') {
+    lockArchived();
+  } else {
+    await refreshMine();
+    GP.startPolling();
+  }
 })();
