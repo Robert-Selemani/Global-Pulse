@@ -17,6 +17,8 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { URL } = require('url');
+const { hashPassword, verifyPassword } = require('./passwords');
+const { sslFor } = require('./pgconfig');
 
 const PORT = process.env.PORT || 3000;
 const CLIENT_DIR = path.join(__dirname, '..', 'client');
@@ -29,31 +31,47 @@ const DATA_FILE = path.join(DATA_DIR, 'data.json');
 // Accounts are stored in the database. The first account to sign up becomes
 // the super admin; everyone else is an end user. Sessions are signed cookies
 // carrying the user id.
-const SESSION_SECRET =
-  process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+
+/**
+ * Resolve the secret used to sign session cookies.
+ *
+ * In production SESSION_SECRET must be set (see .env.example / render.yaml) so
+ * it stays stable across restarts and instances. For local development we fall
+ * back to a generated secret that is *persisted* to disk: a fresh random secret
+ * on every boot would invalidate every existing session cookie on restart,
+ * which looks exactly like "I logged in but can't stay logged in as admin".
+ */
+function resolveSessionSecret() {
+  if (process.env.SESSION_SECRET) return process.env.SESSION_SECRET;
+  const secretFile = path.join(DATA_DIR, '.session-secret');
+  try {
+    const existing = fs.readFileSync(secretFile, 'utf8').trim();
+    if (existing) return existing;
+  } catch (_) {
+    /* not created yet */
+  }
+  const secret = crypto.randomBytes(32).toString('hex');
+  try {
+    fs.mkdirSync(path.dirname(secretFile), { recursive: true });
+    fs.writeFileSync(secretFile, secret, { mode: 0o600 });
+  } catch (_) {
+    // If we can't persist it, sessions still work within this process; they
+    // just won't survive a restart. Nothing else to do.
+  }
+  if (process.env.RENDER || process.env.NODE_ENV === 'production') {
+    // eslint-disable-next-line no-console
+    console.warn(
+      'WARNING: SESSION_SECRET is not set. Using a generated secret; set\n' +
+        'SESSION_SECRET in production so sessions survive restarts and scale.'
+    );
+  }
+  return secret;
+}
+const SESSION_SECRET = resolveSessionSecret();
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 const COOKIE_NAME = 'gp_session';
 const ROLE_SUPER = 'super_admin';
 const ROLE_USER = 'end_user';
-
-// --- Password hashing (scrypt, no external dependency) ---------------------
-function hashPassword(password) {
-  const salt = crypto.randomBytes(16);
-  const hash = crypto.scryptSync(String(password), salt, 64);
-  return 'scrypt$' + salt.toString('hex') + '$' + hash.toString('hex');
-}
-
-function verifyPassword(password, stored) {
-  try {
-    const [scheme, saltHex, hashHex] = String(stored).split('$');
-    if (scheme !== 'scrypt') return false;
-    const hash = Buffer.from(hashHex, 'hex');
-    const test = crypto.scryptSync(String(password), Buffer.from(saltHex, 'hex'), hash.length);
-    return crypto.timingSafeEqual(hash, test);
-  } catch (_) {
-    return false;
-  }
-}
 
 function validEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || ''));
@@ -270,6 +288,15 @@ function makeFileStore(dataFile) {
       migrate();
       // eslint-disable-next-line no-console
       console.log('Storage: JSON file at ' + dataFile);
+      if (process.env.RENDER || process.env.NODE_ENV === 'production') {
+        // Hosts like Render have an ephemeral filesystem: without a database,
+        // every restart silently wipes accounts and polls.
+        // eslint-disable-next-line no-console
+        console.warn(
+          'WARNING: no DATABASE_URL, so data is stored on local disk and will be\n' +
+            'LOST on every restart or deploy. Set DATABASE_URL to a Postgres instance.'
+        );
+      }
     },
 
     // --- Submissions (poll-scoped) ---
@@ -446,18 +473,7 @@ function makePostgresStore(connectionString) {
   // Lazy require so local runs (file store) don't need the pg package.
   const { Pool } = require('pg');
 
-  let ssl = false;
-  try {
-    const host = new URL(connectionString).hostname;
-    // External hosts carry a domain (dots); Render's internal host does not.
-    if (host && host !== 'localhost' && host !== '127.0.0.1' && host.includes('.')) {
-      ssl = { rejectUnauthorized: false };
-    }
-  } catch (_) {
-    /* keep ssl = false */
-  }
-
-  const pool = new Pool({ connectionString, ssl });
+  const pool = new Pool({ connectionString, ssl: sslFor(connectionString) });
 
   function mapRow(r) {
     return {
@@ -890,9 +906,514 @@ function makePostgresStore(connectionString) {
   };
 }
 
-const store = process.env.DATABASE_URL
-  ? makePostgresStore(process.env.DATABASE_URL)
-  : makeFileStore(DATA_FILE);
+function makeSqliteStore(dbPath) {
+  // Lazy require: `node:sqlite` needs Node >= 22.5. Runs that use the file or
+  // Postgres store never load this, so older Node stays fine for those paths.
+  const { DatabaseSync } = require('node:sqlite');
+  const db = new DatabaseSync(dbPath);
+
+  // Numbers come back as JS numbers when they fit in a double (all our ids and
+  // millisecond timestamps do); normalize anyway so callers get plain numbers.
+  const num = (v) => (v == null ? null : Number(v));
+
+  function mapRow(r) {
+    return {
+      id: num(r.id),
+      pollId: r.poll_id != null ? num(r.poll_id) : null,
+      participantId: r.participant_id,
+      countryId: r.country_id,
+      countryName: r.country_name,
+      community: r.community,
+      normalized: r.normalized,
+    };
+  }
+
+  function mapPoll(r) {
+    if (!r) return null;
+    let settings = {};
+    try {
+      settings = r.settings ? JSON.parse(r.settings) : {};
+    } catch (_) {
+      settings = {};
+    }
+    return {
+      id: num(r.id),
+      ownerId: r.owner_id != null ? num(r.owner_id) : null,
+      title: r.title,
+      slug: r.slug,
+      description: r.description || '',
+      status: r.status,
+      participationCode: r.participation_code || null,
+      settings,
+      createdAt: num(r.created_at),
+      archivedAt: r.archived_at != null ? num(r.archived_at) : null,
+      submissionCount: r.submission_count != null ? num(r.submission_count) : 0,
+      communityCount: r.community_count != null ? num(r.community_count) : 0,
+    };
+  }
+
+  // Shared SELECT that carries per-poll counts (mirrors the Postgres store).
+  const POLL_SELECT = `
+    SELECT p.*,
+      (SELECT count(*) FROM submissions s WHERE s.poll_id = p.id) AS submission_count,
+      (SELECT count(DISTINCT s.normalized) FROM submissions s WHERE s.poll_id = p.id)
+        AS community_count
+      FROM polls p`;
+
+  function uniqueSlug(base) {
+    const has = db.prepare('SELECT 1 FROM polls WHERE slug = ?');
+    if (!has.get(base)) return base;
+    let n = 2;
+    while (has.get(base + '-' + n)) n++;
+    return base + '-' + n;
+  }
+
+  // Import a legacy JSON file store into an empty SQLite database so existing
+  // local accounts, polls, and submissions carry over on the first run.
+  function importLegacyJson() {
+    let parsed;
+    try {
+      parsed = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+    } catch (_) {
+      return; // no legacy file (or unreadable) — nothing to import
+    }
+    const users = Array.isArray(parsed.users) ? parsed.users : [];
+    const polls = Array.isArray(parsed.polls) ? parsed.polls : [];
+    const submissions = Array.isArray(parsed.submissions) ? parsed.submissions : [];
+    const subscriptions = Array.isArray(parsed.subscriptions) ? parsed.subscriptions : [];
+    const settings = parsed.settings && typeof parsed.settings === 'object' ? parsed.settings : {};
+    if (!users.length && !polls.length && !submissions.length) return;
+
+    const insUser = db.prepare(
+      'INSERT INTO users (id, email, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)'
+    );
+    for (const u of users) {
+      insUser.run(u.id, String(u.email).toLowerCase(), u.passwordHash, u.role, u.createdAt || Date.now());
+    }
+    const insPoll = db.prepare(
+      `INSERT INTO polls (id, owner_id, title, slug, description, status, participation_code,
+                          settings, created_at, archived_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    for (const p of polls) {
+      insPoll.run(
+        p.id,
+        p.ownerId ?? null,
+        p.title,
+        p.slug,
+        p.description || '',
+        p.status || 'active',
+        p.participationCode || null,
+        JSON.stringify(p.settings || {}),
+        p.createdAt || Date.now(),
+        p.archivedAt || null
+      );
+    }
+    const insSub = db.prepare(
+      `INSERT INTO submissions (id, poll_id, participant_id, country_id, country_name,
+                                community, normalized, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    for (const s of submissions) {
+      insSub.run(
+        s.id,
+        s.pollId ?? null,
+        s.participantId || null,
+        s.countryId,
+        s.countryName,
+        s.community,
+        s.normalized,
+        s.ts || Date.now()
+      );
+    }
+    const insSetting = db.prepare(
+      'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)'
+    );
+    for (const key of Object.keys(settings)) insSetting.run(key, String(settings[key]));
+    const insSubn = db.prepare(
+      `INSERT INTO subscriptions (id, user_id, plan_id, status, provider,
+                                  provider_customer_id, provider_subscription_id,
+                                  current_period_end, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    for (const s of subscriptions) {
+      insSubn.run(
+        s.id,
+        s.userId,
+        s.planId || DEFAULT_PLAN_ID,
+        s.status || 'active',
+        s.provider || 'none',
+        s.providerCustomerId || null,
+        s.providerSubscriptionId || null,
+        s.currentPeriodEnd || null,
+        s.createdAt || Date.now()
+      );
+    }
+    // eslint-disable-next-line no-console
+    console.log(
+      `Imported legacy data.json into SQLite: ${users.length} user(s), ` +
+        `${polls.length} poll(s), ${submissions.length} submission(s).`
+    );
+  }
+
+  return {
+    async init() {
+      try {
+        fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+      } catch (_) {
+        /* ignore */
+      }
+      db.exec('PRAGMA journal_mode = WAL');
+      db.exec('PRAGMA foreign_keys = ON');
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS submissions (
+          id             INTEGER PRIMARY KEY AUTOINCREMENT,
+          poll_id        INTEGER,
+          participant_id TEXT,
+          country_id     TEXT NOT NULL,
+          country_name   TEXT NOT NULL,
+          community      TEXT NOT NULL,
+          normalized     TEXT NOT NULL,
+          created_at     INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_submissions_country ON submissions (country_id);
+        CREATE INDEX IF NOT EXISTS idx_submissions_participant ON submissions (participant_id);
+        CREATE INDEX IF NOT EXISTS idx_submissions_poll ON submissions (poll_id);
+
+        CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
+
+        CREATE TABLE IF NOT EXISTS users (
+          id            INTEGER PRIMARY KEY AUTOINCREMENT,
+          email         TEXT UNIQUE NOT NULL,
+          password_hash TEXT NOT NULL,
+          role          TEXT NOT NULL,
+          created_at    INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS polls (
+          id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+          owner_id           INTEGER REFERENCES users(id),
+          title              TEXT NOT NULL,
+          slug               TEXT UNIQUE NOT NULL,
+          description        TEXT,
+          status             TEXT NOT NULL DEFAULT 'active',
+          participation_code TEXT,
+          settings           TEXT NOT NULL DEFAULT '{}',
+          created_at         INTEGER NOT NULL,
+          archived_at        INTEGER
+        );
+        CREATE INDEX IF NOT EXISTS idx_polls_owner ON polls (owner_id);
+        CREATE INDEX IF NOT EXISTS idx_polls_slug ON polls (slug);
+
+        CREATE TABLE IF NOT EXISTS plans (
+          id               TEXT PRIMARY KEY,
+          name             TEXT NOT NULL,
+          price_cents      INTEGER NOT NULL DEFAULT 0,
+          max_polls        INTEGER,
+          max_participants INTEGER,
+          features         TEXT NOT NULL DEFAULT '{}'
+        );
+
+        CREATE TABLE IF NOT EXISTS subscriptions (
+          id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id                  INTEGER NOT NULL UNIQUE REFERENCES users(id),
+          plan_id                  TEXT NOT NULL DEFAULT 'free' REFERENCES plans(id),
+          status                   TEXT NOT NULL DEFAULT 'active',
+          provider                 TEXT NOT NULL DEFAULT 'none',
+          provider_customer_id     TEXT,
+          provider_subscription_id TEXT,
+          current_period_end       INTEGER,
+          created_at               INTEGER NOT NULL
+        );
+      `);
+
+      // Seed / refresh plans.
+      const upsertPlan = db.prepare(
+        `INSERT INTO plans (id, name, price_cents, max_polls, max_participants, features)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT (id) DO UPDATE SET
+             name = excluded.name, price_cents = excluded.price_cents,
+             max_polls = excluded.max_polls, max_participants = excluded.max_participants,
+             features = excluded.features`
+      );
+      for (const p of PLAN_SEED) {
+        upsertPlan.run(p.id, p.name, p.price_cents, p.max_polls, p.max_participants, JSON.stringify(p.features));
+      }
+
+      // First run on an empty DB: adopt any legacy JSON file store.
+      const userCount = Number(db.prepare('SELECT count(*) AS n FROM users').get().n);
+      if (userCount === 0) importLegacyJson();
+
+      // Backfill a free subscription for any user missing one.
+      db.exec(
+        `INSERT INTO subscriptions (user_id, plan_id, created_at)
+           SELECT u.id, '${DEFAULT_PLAN_ID}', ${Date.now()} FROM users u
+           WHERE NOT EXISTS (SELECT 1 FROM subscriptions s WHERE s.user_id = u.id)`
+      );
+
+      // eslint-disable-next-line no-console
+      console.log('Storage: SQLite at ' + dbPath);
+    },
+
+    // --- Submissions (poll-scoped) ---
+    async add(rec) {
+      const info = db
+        .prepare(
+          `INSERT INTO submissions (poll_id, participant_id, country_id, country_name, community, normalized, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          rec.pollId,
+          rec.participantId || null,
+          rec.countryId,
+          rec.countryName,
+          rec.community,
+          rec.normalized,
+          Date.now()
+        );
+      return Number(info.lastInsertRowid);
+    },
+    async all(pollId) {
+      const cols =
+        'id, poll_id, participant_id, country_id, country_name, community, normalized';
+      const rows =
+        pollId == null
+          ? db.prepare(`SELECT ${cols} FROM submissions ORDER BY id`).all()
+          : db.prepare(`SELECT ${cols} FROM submissions WHERE poll_id = ? ORDER BY id`).all(pollId);
+      return rows.map(mapRow);
+    },
+    async count(pollId) {
+      const row =
+        pollId == null
+          ? db.prepare('SELECT count(*) AS n FROM submissions').get()
+          : db.prepare('SELECT count(*) AS n FROM submissions WHERE poll_id = ?').get(pollId);
+      return Number(row.n);
+    },
+    async getById(id) {
+      const row = db
+        .prepare(
+          `SELECT id, poll_id, participant_id, country_id, country_name, community, normalized
+             FROM submissions WHERE id = ?`
+        )
+        .get(id);
+      return row ? mapRow(row) : null;
+    },
+    async update(id, f) {
+      const info = db
+        .prepare(
+          `UPDATE submissions
+              SET country_id = ?, country_name = ?, community = ?, normalized = ?
+            WHERE id = ?`
+        )
+        .run(f.countryId, f.countryName, f.community, f.normalized, id);
+      return info.changes > 0;
+    },
+    async remove(id) {
+      return db.prepare('DELETE FROM submissions WHERE id = ?').run(id).changes > 0;
+    },
+    async listByParticipant(pollId, pid) {
+      const rows = db
+        .prepare(
+          `SELECT id, poll_id, participant_id, country_id, country_name, community, normalized
+             FROM submissions WHERE poll_id = ? AND participant_id = ? ORDER BY id`
+        )
+        .all(pollId, pid);
+      return rows.map(mapRow);
+    },
+
+    // --- Polls ---
+    async createPoll({ ownerId, title, description }) {
+      const slug = uniqueSlug(slugify(title));
+      const info = db
+        .prepare(
+          `INSERT INTO polls (owner_id, title, slug, description, status, created_at)
+             VALUES (?, ?, ?, ?, 'active', ?)`
+        )
+        .run(ownerId, cleanDisplay(title), slug, cleanDisplay(description || ''), Date.now());
+      return this.getPollById(Number(info.lastInsertRowid));
+    },
+    async getPollById(id) {
+      const row = db.prepare(`${POLL_SELECT} WHERE p.id = ?`).get(Number(id));
+      return row ? mapPoll(row) : null;
+    },
+    async getPollBySlug(slug) {
+      const row = db.prepare(`${POLL_SELECT} WHERE p.slug = ?`).get(slug);
+      return row ? mapPoll(row) : null;
+    },
+    async getPollByCode(code) {
+      const c = String(code || '').trim().toUpperCase();
+      if (!c) return null;
+      const row = db
+        .prepare(
+          `${POLL_SELECT} WHERE p.status <> 'archived' AND upper(p.participation_code) = ? LIMIT 1`
+        )
+        .get(c);
+      return row ? mapPoll(row) : null;
+    },
+    async listPollsByOwner(ownerId) {
+      const rows = db
+        .prepare(`${POLL_SELECT} WHERE p.owner_id = ? ORDER BY p.created_at DESC`)
+        .all(Number(ownerId));
+      return rows.map(mapPoll);
+    },
+    async updatePoll(id, fields) {
+      const sets = [];
+      const vals = [];
+      if (fields.title != null) {
+        sets.push('title = ?');
+        vals.push(cleanDisplay(fields.title));
+      }
+      if (fields.description != null) {
+        sets.push('description = ?');
+        vals.push(cleanDisplay(fields.description));
+      }
+      if (fields.settings != null) {
+        sets.push('settings = ?');
+        vals.push(JSON.stringify(fields.settings));
+      }
+      if (fields.status != null) {
+        sets.push('status = ?');
+        vals.push(fields.status);
+      }
+      if (Object.prototype.hasOwnProperty.call(fields, 'participationCode')) {
+        sets.push('participation_code = ?');
+        vals.push(fields.participationCode);
+      }
+      if (sets.length) {
+        vals.push(Number(id));
+        db.prepare(`UPDATE polls SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
+      }
+      return this.getPollById(id);
+    },
+    async archivePoll(id) {
+      db.prepare(`UPDATE polls SET status = 'archived', archived_at = ? WHERE id = ?`).run(
+        Date.now(),
+        Number(id)
+      );
+      return this.getPollById(id);
+    },
+    async deletePoll(id) {
+      const pid = Number(id);
+      db.prepare('DELETE FROM submissions WHERE poll_id = ?').run(pid);
+      return db.prepare('DELETE FROM polls WHERE id = ?').run(pid).changes > 0;
+    },
+
+    // --- Settings (global key/value) ---
+    async getSetting(key) {
+      const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
+      return row ? row.value : null;
+    },
+    async setSetting(key, value) {
+      if (value === null) {
+        db.prepare('DELETE FROM settings WHERE key = ?').run(key);
+      } else {
+        db.prepare(
+          `INSERT INTO settings (key, value) VALUES (?, ?)
+             ON CONFLICT (key) DO UPDATE SET value = excluded.value`
+        ).run(key, value);
+      }
+    },
+
+    // --- Users ---
+    async countUsers() {
+      return Number(db.prepare('SELECT count(*) AS n FROM users').get().n);
+    },
+    async getUserByEmail(email) {
+      const row = db
+        .prepare('SELECT id, email, password_hash, role FROM users WHERE email = ?')
+        .get(String(email).toLowerCase());
+      if (!row) return null;
+      return { id: num(row.id), email: row.email, passwordHash: row.password_hash, role: row.role };
+    },
+    async getUserById(id) {
+      const row = db.prepare('SELECT id, email, role FROM users WHERE id = ?').get(Number(id));
+      if (!row) return null;
+      return { id: num(row.id), email: row.email, role: row.role };
+    },
+    async createUser({ email, passwordHash, role }) {
+      const info = db
+        .prepare('INSERT INTO users (email, password_hash, role, created_at) VALUES (?, ?, ?, ?)')
+        .run(String(email).toLowerCase(), passwordHash, role, Date.now());
+      const id = Number(info.lastInsertRowid);
+      db.prepare(
+        `INSERT INTO subscriptions (user_id, plan_id, created_at) VALUES (?, ?, ?)
+           ON CONFLICT (user_id) DO NOTHING`
+      ).run(id, DEFAULT_PLAN_ID, Date.now());
+      return { id, email: String(email).toLowerCase(), role };
+    },
+
+    // --- Plans & subscriptions (schema only) ---
+    async listPlans() {
+      const rows = db
+        .prepare(
+          'SELECT id, name, price_cents, max_polls, max_participants, features FROM plans ORDER BY price_cents'
+        )
+        .all();
+      return rows.map((r) => {
+        let features = {};
+        try {
+          features = r.features ? JSON.parse(r.features) : {};
+        } catch (_) {
+          features = {};
+        }
+        return {
+          id: r.id,
+          name: r.name,
+          price_cents: num(r.price_cents),
+          max_polls: r.max_polls != null ? num(r.max_polls) : null,
+          max_participants: r.max_participants != null ? num(r.max_participants) : null,
+          features,
+        };
+      });
+    },
+    async getSubscriptionByUser(userId) {
+      const r = db
+        .prepare(
+          `SELECT id, user_id, plan_id, status, provider, provider_customer_id,
+                  provider_subscription_id, current_period_end, created_at
+             FROM subscriptions WHERE user_id = ?`
+        )
+        .get(Number(userId));
+      if (!r) return null;
+      return {
+        id: num(r.id),
+        userId: num(r.user_id),
+        planId: r.plan_id,
+        status: r.status,
+        provider: r.provider,
+        providerCustomerId: r.provider_customer_id,
+        providerSubscriptionId: r.provider_subscription_id,
+        currentPeriodEnd: r.current_period_end != null ? num(r.current_period_end) : null,
+        createdAt: num(r.created_at),
+      };
+    },
+    async setSubscriptionPlan(userId, planId) {
+      db.prepare(
+        `INSERT INTO subscriptions (user_id, plan_id, status, created_at) VALUES (?, ?, 'active', ?)
+           ON CONFLICT (user_id) DO UPDATE SET plan_id = excluded.plan_id, status = 'active'`
+      ).run(Number(userId), planId, Date.now());
+      return this.getSubscriptionByUser(userId);
+    },
+  };
+}
+
+// Storage selection:
+//   DATABASE_URL=postgres://…  -> PostgreSQL (production, durable)
+//   GP_STORAGE=file            -> legacy JSON file store (tests / verify skill)
+//   otherwise                  -> SQLite at DATA_DIR/data.db (default local dev)
+const SQLITE_PATH = process.env.SQLITE_PATH || path.join(DATA_DIR, 'data.db');
+let STORAGE_KIND;
+let store;
+if (process.env.DATABASE_URL && /^postgres(ql)?:\/\//.test(process.env.DATABASE_URL)) {
+  STORAGE_KIND = 'postgres';
+  store = makePostgresStore(process.env.DATABASE_URL);
+} else if (process.env.GP_STORAGE === 'file') {
+  STORAGE_KIND = 'file';
+  store = makeFileStore(DATA_FILE);
+} else {
+  STORAGE_KIND = 'sqlite';
+  store = makeSqliteStore(SQLITE_PATH);
+}
 
 // ---------------------------------------------------------------------------
 // Aggregation
@@ -1603,7 +2124,13 @@ const server = http.createServer(async (req, res) => {
 
     // --- API: health ---
     if (req.method === 'GET' && pathname === '/api/health') {
-      sendJson(res, 200, { ok: true, submissions: await store.count() });
+      // `storage` is a deployment check, not a secret: on a host with an
+      // ephemeral filesystem, 'file' means accounts are lost on every restart.
+      sendJson(res, 200, {
+        ok: true,
+        storage: STORAGE_KIND,
+        submissions: await store.count(),
+      });
       return;
     }
 

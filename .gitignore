@@ -2,6 +2,14 @@
 server/data.json
 server/data.json.tmp
 
+# SQLite database (default local store) and its WAL sidecar files
+server/data.db
+server/data.db-wal
+server/data.db-shm
+
+# Persisted dev session secret (see resolveSessionSecret in server/index.js)
+server/.session-secret
+
 # Local environment secrets
 .env
 .env.local

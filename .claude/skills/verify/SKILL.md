@@ -10,19 +10,23 @@ driving: the **HTTP API** (curl) and the **browser UI** (Playwright/Chrome).
 
 ## Launch
 
-No `DATABASE_URL` → the app uses the JSON file store, so **no database is
-needed**. Always point `DATA_DIR` at a scratch dir so you never clobber the
-repo's `server/data.json`:
+Locally the app defaults to an embedded **SQLite** store (`DATA_DIR/data.db`);
+set `GP_STORAGE=file` to use the dependency-free **JSON file store** instead, so
+**no database is needed**. Always point `DATA_DIR` at a scratch dir so you never
+clobber the repo's `server/data.json` or `server/data.db`:
 
 ```bash
 export DATA_DIR=/tmp/gp-verify && mkdir -p "$DATA_DIR"
+export GP_STORAGE=file               # JSON file store (or omit to test SQLite)
 export SESSION_SECRET=test-secret PORT=3996
 rm -f "$DATA_DIR/data.json"          # fresh store; omit to test migration
 node server/index.js &
 ```
 
-`rm` the `data.json` between runs — signup only makes the **first** account the
-super admin, and slugs collide across runs otherwise.
+`rm` the store between runs — signup only makes the **first** account the super
+admin, and slugs collide across runs otherwise. For the SQLite path remove
+`"$DATA_DIR/data.db"` (and its `-wal`/`-shm` sidecars); a fresh `data.db` with a
+legacy `data.json` present exercises the JSON→SQLite import.
 
 ## Drive the UI (Playwright)
 

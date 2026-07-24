@@ -116,8 +116,10 @@ Global-Pulse/
 
 - **Backend:** plain Node.js (`node:http`), one dependency (`pg`).
   Persistence is **pluggable**: PostgreSQL when `DATABASE_URL` is set
-  (production), or a JSON file otherwise (local dev). Adds security headers,
-  admin sessions (signed HttpOnly cookies), and login rate limiting.
+  (production), otherwise an embedded **SQLite** database (`server/data.db`, via
+  the built-in `node:sqlite`) for local dev — or the dependency-free JSON file
+  store with `GP_STORAGE=file`. Adds security headers, admin sessions (signed
+  HttpOnly cookies), and login rate limiting.
 - **Frontend:** vanilla JS + [Leaflet](https://leafletjs.com/) rendering a
   GeoJSON map. Represented countries are filled with their flag via SVG
   patterns (flag images from [flagcdn.com](https://flagcdn.com)). **Leaflet is
@@ -167,14 +169,17 @@ See [`.env.example`](./.env.example). Key ones:
 
 | Variable | Purpose |
 | --- | --- |
-| `DATABASE_URL` | PostgreSQL connection string. When set, data is stored in Postgres; otherwise a JSON file is used. |
-| `SESSION_SECRET` | Signs session cookies. Use a long random string. |
-| `DATA_DIR` | Directory for the JSON-file fallback (only when `DATABASE_URL` is unset). |
+| `DATABASE_URL` | PostgreSQL connection string. When set, data is stored in Postgres; otherwise a local SQLite database is used. |
+| `SESSION_SECRET` | Signs session cookies. Use a long random string. Unset locally, a generated secret is persisted to `DATA_DIR/.session-secret` so sessions survive restarts. |
+| `DATA_DIR` | Directory for the local SQLite database `data.db` (and the JSON fallback). |
+| `SQLITE_PATH` | Override the SQLite file location (default `DATA_DIR/data.db`). |
+| `GP_STORAGE` | Set to `file` to force the legacy JSON store instead of SQLite. |
 | `PORT` | Port to listen on (Render sets this automatically). |
 
 ## Running locally
 
-Requires **Node.js 18+**. No install step needed.
+Requires **Node.js 18+** (the default SQLite store needs **Node 22.5+**; on
+older Node use `GP_STORAGE=file` or set `DATABASE_URL`). No install step needed.
 
 ```bash
 git clone https://github.com/Robert-Selemani/Global-Pulse.git
@@ -231,10 +236,11 @@ created (and migrated) automatically on first boot.
 > is wired up. The provider columns exist so billing can be added without a
 > further migration.
 
-Locally, `DATABASE_URL` is unset, so the app falls back to a JSON file
-(`server/data.json`) with the same shape — no database required for
-development. Both backends implement the identical store interface, so they
-behave the same.
+Locally, `DATABASE_URL` is unset, so the app uses an embedded SQLite database
+(`server/data.db`) with the same shape — no separate database server required
+for development. On first run any legacy `server/data.json` is imported into
+SQLite automatically. All three backends (Postgres, SQLite, JSON file)
+implement the identical store interface, so they behave the same.
 
 > **Note:** The blueprint uses the `starter` web plan and a `basic-256mb`
 > Postgres plan (both paid). Adjust the plans in `render.yaml` to taste.
