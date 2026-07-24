@@ -1153,6 +1153,16 @@ function makeSqliteStore(dbPath) {
 
       // eslint-disable-next-line no-console
       console.log('Storage: SQLite at ' + dbPath);
+      if (process.env.RENDER || process.env.NODE_ENV === 'production') {
+        // Hosts like Render have an ephemeral filesystem: without a database,
+        // this SQLite file (and every account and poll in it) is wiped on every
+        // restart or deploy. Set DATABASE_URL to a Postgres instance.
+        // eslint-disable-next-line no-console
+        console.warn(
+          'WARNING: no DATABASE_URL, so data is stored in a local SQLite file and\n' +
+            'will be LOST on every restart or deploy. Set DATABASE_URL to Postgres.'
+        );
+      }
     },
 
     // --- Submissions (poll-scoped) ---
