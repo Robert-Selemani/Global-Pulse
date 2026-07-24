@@ -1412,9 +1412,34 @@ function makeSqliteStore(dbPath) {
 //   GP_STORAGE=file            -> legacy JSON file store (tests / verify skill)
 //   otherwise                  -> SQLite at DATA_DIR/data.db (default local dev)
 const SQLITE_PATH = process.env.SQLITE_PATH || path.join(DATA_DIR, 'data.db');
+const HAS_POSTGRES =
+  !!process.env.DATABASE_URL && /^postgres(ql)?:\/\//.test(process.env.DATABASE_URL);
+const IS_PRODUCTION = !!process.env.RENDER || process.env.NODE_ENV === 'production';
+
+// Fail fast in production without a database. The on-disk stores (SQLite / JSON)
+// live on an ephemeral filesystem on hosts like Render, so every account, poll,
+// and submission would be silently wiped on the next restart or deploy. Refuse
+// to boot rather than pretend to work and lose data. Set ALLOW_EPHEMERAL_STORAGE=1
+// to override intentionally (e.g. a throwaway demo).
+if (IS_PRODUCTION && !HAS_POSTGRES && process.env.ALLOW_EPHEMERAL_STORAGE !== '1') {
+  // eslint-disable-next-line no-console
+  console.error(
+    [
+      'FATAL: starting in production without a database.',
+      '',
+      'DATABASE_URL is not set, so all accounts, polls, and submissions would be',
+      'stored on an ephemeral filesystem and LOST on every restart or deploy.',
+      '',
+      'Fix: set DATABASE_URL to a PostgreSQL connection string (see render.yaml).',
+      'To run ephemerally on purpose (e.g. a demo), set ALLOW_EPHEMERAL_STORAGE=1.',
+    ].join('\n')
+  );
+  process.exit(1);
+}
+
 let STORAGE_KIND;
 let store;
-if (process.env.DATABASE_URL && /^postgres(ql)?:\/\//.test(process.env.DATABASE_URL)) {
+if (HAS_POSTGRES) {
   STORAGE_KIND = 'postgres';
   store = makePostgresStore(process.env.DATABASE_URL);
 } else if (process.env.GP_STORAGE === 'file') {
