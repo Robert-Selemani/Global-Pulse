@@ -57,6 +57,7 @@ window.GP = (function () {
   let labelLayer;
   let geoLayer = null;
   let selectHandler = null;
+  let dataHandler = null;
 
   // --- Zoom -----------------------------------------------------------------
   function zoomToPct(zoom) {
@@ -396,6 +397,7 @@ window.GP = (function () {
     renderStats();
     renderCountriesList();
     if (state.selectedId) renderCommunityList(state.data.countries[state.selectedId]);
+    if (dataHandler) dataHandler(state.data);
   }
 
   async function loadStatic() {
@@ -445,6 +447,7 @@ window.GP = (function () {
     renderStats();
     renderCountriesList();
     updateZoomIndicator();
+    if (dataHandler) dataHandler(state.data);
   }
 
   function startPolling() {
@@ -474,6 +477,9 @@ window.GP = (function () {
     refreshStyles,
     onSelect(fn) {
       selectHandler = fn;
+    },
+    onData(fn) {
+      dataHandler = fn;
     },
   };
 })();

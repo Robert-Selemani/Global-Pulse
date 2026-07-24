@@ -326,7 +326,8 @@ body {
 
 .entry-form,
 .community-panel,
-.countries-panel {
+.countries-panel,
+.chart-panel {
   background: var(--panel-2);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -335,9 +336,78 @@ body {
 
 .entry-form h2,
 .community-panel h2,
-.countries-panel h2 {
+.countries-panel h2,
+.chart-panel h2 {
   margin: 0 0 12px;
   font-size: 16px;
+}
+
+/* Communities-by-country bar chart */
+.gp-chart {
+  position: relative;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.gp-chart-svg {
+  display: block;
+  max-width: none; /* allow horizontal scroll when many countries */
+  height: auto;
+}
+.gp-bar {
+  fill: var(--accent);
+  transition: fill 0.12s ease;
+  cursor: pointer;
+}
+.gp-bar:hover {
+  fill: #35e389;
+}
+.gp-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+.gp-axis {
+  stroke: var(--muted);
+  stroke-width: 1.5;
+  opacity: 0.6;
+}
+.gp-axis-label {
+  fill: var(--muted);
+  font-size: 11px;
+}
+.gp-axis-label.gp-y {
+  text-anchor: end;
+}
+.gp-axis-label.gp-x {
+  text-anchor: end;
+}
+.gp-value-label {
+  fill: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+  text-anchor: middle;
+}
+.gp-chart-tip {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  background: rgba(16, 24, 37, 0.96);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 9px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text);
+  pointer-events: none;
+  white-space: nowrap;
+  box-shadow: var(--shadow);
+  z-index: 5;
+}
+.gp-chart-tip strong {
+  display: block;
+  color: var(--accent);
+}
+.gp-chart-empty {
+  margin: 8px 0 0;
 }
 
 /* Countries represented list */

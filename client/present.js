@@ -50,6 +50,13 @@
   }
 
   (async function boot() {
+    // Wire the communities-by-country bar chart to the live data feed.
+    const chartEl = document.getElementById('communities-chart');
+    if (chartEl && window.GPChart) {
+      GPChart.mount(chartEl);
+      GP.onData((data) => GPChart.render(data));
+    }
+
     const live = await applyConfig();
     GP.initMap();
     try {
