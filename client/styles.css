@@ -170,6 +170,12 @@ body {
   min-height: 0;
 }
 
+/* Results page: a 1:3 split — bar chart + details on the left, map on the
+   right. (The voting page keeps the fixed 360px sidebar via the base rule.) */
+.layout--present {
+  grid-template-columns: 1fr 3fr;
+}
+
 .map-panel {
   position: relative;
   min-height: 0;
