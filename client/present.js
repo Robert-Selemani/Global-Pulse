@@ -23,7 +23,7 @@
       if (!res.ok) throw new Error('not found');
       const cfg = await res.json();
       if (titleEl) titleEl.textContent = cfg.title || 'Global Pulse';
-      document.title = (cfg.title || 'Global Pulse') + ' — Live Map';
+      document.title = (cfg.title || 'Global Pulse') + ' — Results';
 
       const archived = cfg.status === 'archived';
       if (archived) {

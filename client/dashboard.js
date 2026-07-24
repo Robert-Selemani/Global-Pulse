@@ -174,7 +174,7 @@ function pollCard(poll) {
   const actions = document.createElement('div');
   actions.className = 'poll-actions';
 
-  const present = actionBtn(archived ? 'View results' : 'Open map', '', () => {
+  const present = actionBtn(archived ? 'View results' : 'Open results', '', () => {
     window.open('/p/' + poll.slug, '_blank');
   });
   actions.appendChild(present);
