@@ -41,7 +41,7 @@ function fmtDate(ms) {
   }
 }
 
-// URL for the QR code: shown on-screen in the room, so we embed the code — a
+// URL for the QR code: shown on-screen in the room, so we embed the code - a
 // scan is a frictionless join with no code prompt (physical presence is the gate).
 function qrUrl(poll) {
   const base = location.origin + '/vote?poll=' + encodeURIComponent(poll.slug);
@@ -49,7 +49,7 @@ function qrUrl(poll) {
 }
 
 // URL for the shareable "join link": a link can be forwarded to anyone, so we do
-// NOT embed the code — recipients are prompted to enter it (share it separately).
+// NOT embed the code - recipients are prompted to enter it (share it separately).
 function shareUrl(poll) {
   return location.origin + '/vote?poll=' + encodeURIComponent(poll.slug);
 }
@@ -174,7 +174,7 @@ function pollCard(poll) {
     } else {
       const open = document.createElement('p');
       open.className = 'hint';
-      open.textContent = 'No code — anyone with the link can join.';
+      open.textContent = 'No code - anyone with the link can join.';
       codeBox.appendChild(open);
     }
     card.appendChild(codeBox);

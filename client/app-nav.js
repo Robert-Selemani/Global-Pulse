@@ -3,7 +3,7 @@
 /**
  * Shared organizer sidebar. Any authenticated page includes a
  * `<div id="app-sidebar"></div>` placeholder and this script; it renders the
- * left nav in place — highlighting the current page, hiding super-admin-only
+ * left nav in place - highlighting the current page, hiding super-admin-only
  * items for non-admins, wiring log out, and pointing "Results" at the newest
  * real poll (not the empty default). Redirects to /login if not signed in.
  */
@@ -13,7 +13,7 @@
   const path = location.pathname;
 
   const ITEMS = [
-    // Results is the full-bleed public map — open it in a new tab so the app
+    // Results is the full-bleed public map - open it in a new tab so the app
     // shell (and this menu) stays put in the original tab.
     { label: 'Results ↗', href: '/present', match: ['/present', '/p/', '/results/'], external: true },
     { label: 'Polls', href: '/dashboard', match: ['/dashboard'] },

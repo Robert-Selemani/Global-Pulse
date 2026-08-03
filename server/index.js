@@ -69,7 +69,7 @@ function resolveSessionSecret() {
 }
 const SESSION_SECRET = resolveSessionSecret();
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
-const RESET_TTL_MS = 60 * 60 * 1000; // 1 hour — password-reset link lifetime
+const RESET_TTL_MS = 60 * 60 * 1000; // 1 hour - password-reset link lifetime
 const COOKIE_NAME = 'gp_session';
 const ROLE_SUPER = 'super_admin';
 const ROLE_USER = 'end_user';
@@ -1018,7 +1018,7 @@ function makeSqliteStore(dbPath) {
     try {
       parsed = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
     } catch (_) {
-      return; // no legacy file (or unreadable) — nothing to import
+      return; // no legacy file (or unreadable) - nothing to import
     }
     const users = Array.isArray(parsed.users) ? parsed.users : [];
     const polls = Array.isArray(parsed.polls) ? parsed.polls : [];
@@ -1644,7 +1644,7 @@ function makeSessionToken(userId) {
 // --- Password reset tokens (stateless, single-use) -------------------------
 // A reset token is HMAC-signed like a session, but its payload also carries a
 // fingerprint of the account's *current* password hash. A successful reset
-// changes that hash, so any outstanding token stops validating — single-use
+// changes that hash, so any outstanding token stops validating - single-use
 // behaviour with no server-side token storage.
 function pwFingerprint(passwordHash) {
   return crypto
@@ -2261,7 +2261,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      // Submit a community entry to this poll. No login required — the
+      // Submit a community entry to this poll. No login required - the
       // participant is identified by account or anonymous browser cookie.
       if (sub === 'submit' && req.method === 'POST') {
         if (poll.status === 'archived') {

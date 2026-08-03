@@ -12,7 +12,7 @@
 window.GP = (function () {
   const POLL_INTERVAL_MS = 4000;
   const SVGNS = 'http://www.w3.org/2000/svg';
-  const FLAG_BASE = '/vendor/flags'; // bundled locally — no external CDN
+  const FLAG_BASE = '/vendor/flags'; // bundled locally - no external CDN
   const CONTINENTS = [
     'Africa',
     'Asia',
@@ -386,7 +386,7 @@ window.GP = (function () {
     // margins. The results map is a tall, half-width panel, so a fit-inside
     // leaves big gaps around a compact continent like Africa. getBoundsZoom
     // with inside=true returns the zoom at which the region covers the whole
-    // map (ocean overflow is cropped) — no manual zooming needed to present.
+    // map (ocean overflow is cropped) - no manual zooming needed to present.
     if (bounds.isValid()) {
       const z = Math.min(map.getBoundsZoom(bounds, true), map.getMaxZoom());
       map.setView(bounds.getCenter(), z, { animate: false });

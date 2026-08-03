@@ -36,8 +36,8 @@
   async function loadDetails() {
     try {
       const session = await apiJson('/api/session');
-      el.email.textContent = session.email || '—';
-      el.role.textContent = ROLE_LABEL[session.role] || session.role || '—';
+      el.email.textContent = session.email || '-';
+      el.role.textContent = ROLE_LABEL[session.role] || session.role || '-';
     } catch (_) {
       /* sidebar will have redirected if signed out */
     }
@@ -51,7 +51,7 @@
         el.plan.textContent = plan ? plan.name : subscription.planId;
       }
     } catch (_) {
-      el.plan.textContent = '—';
+      el.plan.textContent = '-';
     }
   }
 

@@ -1,4 +1,4 @@
-# Global Pulse — Interactive Community Map
+# Global Pulse - Interactive Community Map
 
 An open-source, interactive world map for **visualizing and tracking
 communities** across countries. Built as a precise, community-aware
@@ -13,7 +13,7 @@ Existing polling platforms have two big weaknesses this tool fixes:
 
 - **Imprecise pin-dropping**, especially for geographically small countries.
   Global Pulse replaces free pin-drops with **exact country-level selection**.
-- **Attendee counts only** — no sense of *which* communities are present.
+- **Attendee counts only** - no sense of *which* communities are present.
   Global Pulse tracks **unique communities** per country via normalized
   free-text input, so new and emerging groups are discovered, not just counted.
 
@@ -23,14 +23,14 @@ Existing polling platforms have two big weaknesses this tool fixes:
 | --- | --- |
 | **Country selection** | Choose from a predefined list (dropdown or click the map). |
 | **Community input** | Free-text field; new communities are catalogued automatically. |
-| **Flag fill** | Represented countries are filled with their **national flag**; others stay neutral grey. The map shows no numbers — all counts live in the sidebar. |
+| **Flag fill** | Represented countries are filled with their **national flag**; others stay neutral grey. The map shows no numbers - all counts live in the sidebar. |
 | **Counts in the sidebar** | Per-country community + participant counts live in the sidebar, not on the map. |
-| **Always-on country list** | A "Countries represented" panel always lists every represented country and its counts — even while a country is selected for entry. |
+| **Always-on country list** | A "Countries represented" panel always lists every represented country and its counts - even while a country is selected for entry. |
 | **Selected-country detail** | Lists every unique community in the selected country with member counts. Includes a **Clear selection** button. |
 | **Accounts & roles** | Email/password sign-up. The **first account is the super admin**; the rest are end users. Any account can create polls. |
-| **Multiple polls & past-poll history** | Each organizer runs **many polls over time**. Every poll has its own map, submissions, and join code, and can be **archived** — archived polls become read-only and move to **Past polls**, where their results stay viewable. |
+| **Multiple polls & past-poll history** | Each organizer runs **many polls over time**. Every poll has its own map, submissions, and join code, and can be **archived** - archived polls become read-only and move to **Past polls**, where their results stay viewable. |
 | **Organizer dashboard** | A `/dashboard` page to create polls, copy join links + QR, set/clear codes, **export CSV**, archive, and delete. |
-| **Subscription plans** | Accounts carry a **subscription** (Free / Pro / Business) in the database. *Schema only for now — no billing and no limits enforced yet.* |
+| **Subscription plans** | Accounts carry a **subscription** (Free / Pro / Business) in the database. *Schema only for now - no billing and no limits enforced yet.* |
 | **Presentation vs. voting pages** | A public **presentation** page (`/p/<slug>`) for screens and a login-gated **voting** page for participation. |
 | **Self-service edit/withdraw** | Logged-in users can **edit** or **withdraw** their own submissions (ownership enforced server-side). |
 | **Participation code + QR** | A poll's organizer can generate a **participation code** and **QR code** for attendees to join; when set, a valid code is required to submit. Codes are **per poll**. |
@@ -43,7 +43,7 @@ Existing polling platforms have two big weaknesses this tool fixes:
 
 | Page | URL | Who | Purpose |
 | --- | --- | --- | --- |
-| **Poll presentation** | `/p/<slug>` | Public | One poll's live map for display on screens — flags, "Countries represented", and running totals. Read-only. |
+| **Poll presentation** | `/p/<slug>` | Public | One poll's live map for display on screens - flags, "Countries represented", and running totals. Read-only. |
 | **Dashboard** | `/dashboard` | Logged-in users | Create and manage **your polls**: join links + QR, codes, CSV export, archive, delete. Lists **active** and **past** polls. |
 | **Voting** | `/vote?poll=<slug>` | Logged-in users | Add / edit / withdraw your community in that poll; zoom & pan. |
 | **Presentation (default)** | `/` (or `/present`) | Public | The legacy/default poll's map, for installs migrated from the original single-poll app. |
@@ -64,14 +64,14 @@ of the polls it creates.
   poll has a participation code, they enter it (or arrive via the QR link) to
   submit.
 - **Organizer (any account):** everything above, plus a **dashboard** for the
-  polls they own — create polls, generate/regenerate/remove each poll's
+  polls they own - create polls, generate/regenerate/remove each poll's
   **participation code + QR**, **export CSV**, and **archive** or delete.
 - **Super admin (first account):** everything above, and may manage **any**
   poll on the platform.
 
 ## Password resets
 
-There is no email provider wired up, so resets are **admin-mediated** — no
+There is no email provider wired up, so resets are **admin-mediated** - no
 external service required.
 
 - A locked-out user visits **`/forgot-password`** (linked from the login page)
@@ -83,12 +83,12 @@ external service required.
 
 Reset tokens are stateless: HMAC-signed like sessions, but bound to a
 fingerprint of the account's **current** password hash. A successful reset
-changes that hash, so the token stops validating — making it **single-use**
+changes that hash, so the token stops validating - making it **single-use**
 with no server-side token storage. Links **expire after one hour**.
 
 > **Super-admin lockout.** Generating a link requires a signed-in super admin,
 > so if the super-admin account itself is locked out, use the CLI once to get
-> back in — run it wherever the store lives (locally, or in the Render shell,
+> back in - run it wherever the store lives (locally, or in the Render shell,
 > which has `DATABASE_URL` set):
 >
 > ```bash
@@ -105,7 +105,7 @@ poll keeps its own submissions, participation code, and results.
   (e.g. *AI Summit 2026* → `ai-summit-2026`).
 - Share `/vote?poll=<slug>` (or the QR code) with attendees; present at
   `/p/<slug>`.
-- **Archiving** a poll makes it read-only — submissions are blocked, but the
+- **Archiving** a poll makes it read-only - submissions are blocked, but the
   results stay viewable and it moves to **Past polls** on the dashboard.
 
 > Upgrading from the original single-poll version? On first boot all existing
@@ -146,7 +146,7 @@ Global-Pulse/
 - **Backend:** plain Node.js (`node:http`), one dependency (`pg`).
   Persistence is **pluggable**: PostgreSQL when `DATABASE_URL` is set
   (production), otherwise an embedded **SQLite** database (`server/data.db`, via
-  the built-in `node:sqlite`) for local dev — or the dependency-free JSON file
+  the built-in `node:sqlite`) for local dev - or the dependency-free JSON file
   store with `GP_STORAGE=file`. Adds security headers, admin sessions (signed
   HttpOnly cookies), and login rate limiting.
 - **Frontend:** vanilla JS + [Leaflet](https://leafletjs.com/) rendering a
@@ -157,7 +157,7 @@ Global-Pulse/
 
 ### API
 
-**Poll-scoped (participants & presentation)** — `:slug` is the poll's slug:
+**Poll-scoped (participants & presentation)** - `:slug` is the poll's slug:
 
 | Method | Path | Description |
 | --- | --- | --- |
@@ -192,7 +192,7 @@ Global-Pulse/
 | `GET` | `/api/reset/validate` | Check a reset token `?token=…` → `{ valid, email? }`. |
 | `POST` | `/api/reset-password` | Set a new password `{ token, password }` via a valid reset link. |
 | `GET` | `/api/plans` | Available subscription plans (public). |
-| `GET`/`POST` | `/api/subscription` | Read / set the current user's plan. *Schema only — no billing.* |
+| `GET`/`POST` | `/api/subscription` | Read / set the current user's plan. *Schema only - no billing.* |
 | `GET` | `/api/data`, `/api/config` | Legacy aliases resolving to the default (migrated) poll. |
 | `GET` | `/api/health` | Liveness + submission count. |
 
@@ -221,7 +221,7 @@ npm start            # or: node server/index.js
 ```
 
 Then open <http://localhost:3000>. Go to `/signup` to create the **first
-account (the super admin)** — you'll land on `/dashboard`. Create a poll there,
+account (the super admin)** - you'll land on `/dashboard`. Create a poll there,
 then share its join link (`/vote?poll=<slug>`) or QR with participants and
 present it at `/p/<slug>`. Set a custom port with `PORT=8080 npm start`.
 
@@ -230,20 +230,20 @@ present it at `/p/<slug>`. Set a custom port with `PORT=8080 npm start`.
 This is a **Node web service** (not a static site) backed by **Render
 Postgres**. A [`render.yaml`](./render.yaml) blueprint provisions both.
 
-### Option A — Blueprint (recommended)
+### Option A - Blueprint (recommended)
 
 1. Push this repo to GitHub.
 2. In Render: **New → Blueprint**, and point it at this repository.
 3. Render reads `render.yaml` and provisions a **web service + a managed
    PostgreSQL database**, wiring `DATABASE_URL` into the service automatically.
    Click **Apply**. `SESSION_SECRET` is generated automatically.
-4. Open the deployed URL and go to `/signup` — **the first account you create
+4. Open the deployed URL and go to `/signup` - **the first account you create
    is the super admin.** Do this promptly after deploy, then create your first
    poll from `/dashboard`.
 
-### Option B — Manual
+### Option B - Manual
 
-1. **New → PostgreSQL** — create a database, copy its connection string.
+1. **New → PostgreSQL** - create a database, copy its connection string.
 2. **New → Web Service** from your GitHub repo. Runtime **Node**,
    Build `npm install`, Start `npm start`.
 3. Add env vars: `DATABASE_URL=<connection string>` and a long random
@@ -270,7 +270,7 @@ created (and migrated) automatically on first boot.
 > further migration.
 
 Locally, `DATABASE_URL` is unset, so the app uses an embedded SQLite database
-(`server/data.db`) with the same shape — no separate database server required
+(`server/data.db`) with the same shape - no separate database server required
 for development. On first run any legacy `server/data.json` is imported into
 SQLite automatically. All three backends (Postgres, SQLite, JSON file)
 implement the identical store interface, so they behave the same.
@@ -280,18 +280,18 @@ implement the identical store interface, so they behave the same.
 
 ## Phased implementation (per the spec)
 
-- **Phase 1 — Country representation:** country selection, map coloring, and
+- **Phase 1 - Country representation:** country selection, map coloring, and
   total participant counts per country. ✅
-- **Phase 2 — Unique community tracking:** free-text input with real-time
+- **Phase 2 - Unique community tracking:** free-text input with real-time
   deduplication, unique-community counts per country, and the live sidebar. ✅
-- **Phase 3 — Multi-poll platform:** accounts own many polls, per-poll join
+- **Phase 3 - Multi-poll platform:** accounts own many polls, per-poll join
   codes, archiving with **past-poll history**, CSV export, and a subscription
   schema on every account. ✅
 
 ### Not yet wired up
 
 Billing (Stripe) and plan-limit enforcement, email verification and
-**email-based** self-serve password reset (resets are currently admin-mediated —
+**email-based** self-serve password reset (resets are currently admin-mediated -
 see [Password resets](#password-resets)), and real-time updates via SSE (the map
 currently polls).
 

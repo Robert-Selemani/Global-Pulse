@@ -109,7 +109,7 @@ window.GPChart = (function () {
       if (!empty) {
         empty = document.createElement('p');
         empty.className = 'gp-chart-empty hint';
-        empty.textContent = 'No communities yet — the chart appears once entries arrive.';
+        empty.textContent = 'No communities yet - the chart appears once entries arrive.';
         root.appendChild(empty);
       }
       return;

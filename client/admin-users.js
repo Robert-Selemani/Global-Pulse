@@ -16,7 +16,7 @@
   }
 
   async function boot() {
-    // Non-super-admins have no business here — send them back to Polls.
+    // Non-super-admins have no business here - send them back to Polls.
     try {
       const session = await apiJson('/api/session');
       if (!session.isSuperAdmin) {

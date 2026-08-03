@@ -234,7 +234,7 @@ function lockArchived() {
   el.submitBtn.disabled = true;
   el.communityInput.disabled = true;
   GP.els.countrySelect.disabled = true;
-  setMessage('This poll has been archived — it is now read-only.', 'error');
+  setMessage('This poll has been archived - it is now read-only.', 'error');
 }
 
 // ---------------------------------------------------------------------------
@@ -262,7 +262,7 @@ function lockArchived() {
     return;
   }
   if (el.pollTitle) el.pollTitle.textContent = cfg.title || 'Global Pulse';
-  document.title = 'Vote — ' + (cfg.title || 'Global Pulse');
+  document.title = 'Vote - ' + (cfg.title || 'Global Pulse');
 
   GP.setDataUrl(API + '/data');
   GP.initMap();

@@ -14,7 +14,7 @@
  *   node server/reset-password.js <email> [new-password]
  *
  * With no password, a strong one is generated and printed. Run it wherever the
- * store lives — locally for the file store, or in the Render shell (which has
+ * store lives - locally for the file store, or in the Render shell (which has
  * DATABASE_URL set) for production.
  */
 

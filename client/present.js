@@ -23,7 +23,7 @@
       if (!res.ok) throw new Error('not found');
       const cfg = await res.json();
       if (titleEl) titleEl.textContent = cfg.title || 'Global Pulse';
-      document.title = (cfg.title || 'Global Pulse') + ' — Results';
+      document.title = (cfg.title || 'Global Pulse') + ' - Results';
 
       const archived = cfg.status === 'archived';
       if (archived) {
@@ -32,9 +32,9 @@
           badgeEl.hidden = false;
         }
         // An archived poll is a snapshot, not a live feed.
-        if (taglineEl) taglineEl.textContent = 'Final results — this poll has ended';
+        if (taglineEl) taglineEl.textContent = 'Final results - this poll has ended';
       }
-      // Point participants at this poll — an archived poll takes no entries.
+      // Point participants at this poll - an archived poll takes no entries.
       if (participateEl) {
         if (archived) participateEl.hidden = true;
         else participateEl.href = '/vote?poll=' + encodeURIComponent(slug);
@@ -66,7 +66,7 @@
       console.error('Failed to load presentation:', err);
       return;
     }
-    // Archived polls are static — no need to poll for updates.
+    // Archived polls are static - no need to poll for updates.
     if (live) GP.startPolling();
   })();
 })();
