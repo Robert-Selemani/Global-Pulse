@@ -1,6 +1,6 @@
 ---
 name: verify
-description: Build, run, and drive Global Pulse end-to-end to verify a change actually works — starts the server on the JSON file-store and drives the real UI in Chrome via Playwright.
+description: Build, run, and drive Global Pulse end-to-end to verify a change actually works - starts the server on the JSON file-store and drives the real UI in Chrome via Playwright.
 ---
 
 # Verifying Global Pulse
@@ -23,7 +23,7 @@ rm -f "$DATA_DIR/data.json"          # fresh store; omit to test migration
 node server/index.js &
 ```
 
-`rm` the store between runs — signup only makes the **first** account the super
+`rm` the store between runs - signup only makes the **first** account the super
 admin, and slugs collide across runs otherwise. For the SQLite path remove
 `"$DATA_DIR/data.db"` (and its `-wal`/`-shm` sidecars); a fresh `data.db` with a
 legacy `data.json` present exercises the JSON→SQLite import.
@@ -41,7 +41,7 @@ const page = await ctx.newPage();   // note: newContext() then newPage()
 
 **Gotcha:** country `<option>` values are **ISO A3** (`SWZ`, `KEN`), not ISO2.
 `client/data/countries.geo.json` is the source of truth. Wait for the select to
-populate — it loads 242 features:
+populate - it loads 242 features:
 
 ```js
 await page.waitForFunction(
@@ -62,7 +62,7 @@ await page.selectOption('#country-select', 'SWZ');
 
 ## Probes that matter
 
-Poll-scoping and ownership are the risky seams — check with curl:
+Poll-scoping and ownership are the risky seams - check with curl:
 
 - Non-owner hits `/api/polls/:id{,/archive,/code,/export}` → **403**
 - Edit/delete a submission through the **wrong poll slug** → **403**
