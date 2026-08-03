@@ -2,16 +2,14 @@
 'use strict';
 
 /**
- * Organizer dashboard. Lists the signed-in user's polls (active and past),
- * lets them create polls, manage each poll's participation code + QR, export
- * results as CSV, and archive or delete polls.
+ * Polls page. Lists the signed-in user's polls (active and past), lets them
+ * create polls, manage each poll's participation code + QR and join link,
+ * export results as CSV, and archive or delete polls. The sidebar (app-nav.js)
+ * handles auth, navigation, and log out.
  */
 
 const $ = (id) => document.getElementById(id);
 const el = {
-  accountEmail: $('account-email'),
-  planChip: $('plan-chip'),
-  logoutBtn: $('logout-btn'),
   createForm: $('create-form'),
   titleInput: $('poll-title-input'),
   descInput: $('poll-desc-input'),
@@ -23,15 +21,6 @@ const el = {
   pastCount: $('past-count'),
   activeEmpty: $('active-empty'),
   pastEmpty: $('past-empty'),
-  resultsLink: $('results-link'),
-  resetPanel: $('reset-panel'),
-  resetForm: $('reset-link-form'),
-  resetSelect: $('reset-user-select'),
-  resetBtn: $('reset-link-btn'),
-  resetMessage: $('reset-link-message'),
-  resetOutput: $('reset-link-output'),
-  resetUrl: $('reset-link-url'),
-  resetCopy: $('reset-link-copy'),
 };
 
 function setCreateMessage(text, kind) {
@@ -94,7 +83,7 @@ async function setCode(poll) {
   await loadPolls();
 }
 async function clearCode(poll) {
-  if (!window.confirm('Remove the participation code? Anyone signed in can then join.')) return;
+  if (!window.confirm('Remove the participation code? Anyone with the link can then join.')) return;
   await apiJson('/api/polls/' + poll.id + '/code', { method: 'DELETE' });
   await loadPolls();
 }
@@ -185,7 +174,7 @@ function pollCard(poll) {
     } else {
       const open = document.createElement('p');
       open.className = 'hint';
-      open.textContent = 'No code — anyone signed in can join.';
+      open.textContent = 'No code — anyone with the link can join.';
       codeBox.appendChild(open);
     }
     card.appendChild(codeBox);
@@ -253,99 +242,12 @@ function renderPolls(polls) {
 
   for (const p of active) el.activePolls.appendChild(pollCard(p));
   for (const p of past) el.pastPolls.appendChild(pollCard(p));
-
-  // Point the header "Results" link at a real poll (newest active, else newest
-  // archived) so it opens live data — not the empty legacy default poll.
-  if (el.resultsLink) {
-    const target = active[0] || past[0] || null;
-    if (target) {
-      el.resultsLink.href = '/p/' + target.slug;
-      el.resultsLink.hidden = false;
-    } else {
-      el.resultsLink.hidden = true;
-    }
-  }
 }
 
 async function loadPolls() {
   const { polls } = await apiJson('/api/polls');
   renderPolls(polls || []);
 }
-
-async function loadPlan() {
-  try {
-    const [{ subscription }, { plans }] = await Promise.all([
-      apiJson('/api/subscription'),
-      apiJson('/api/plans'),
-    ]);
-    if (!subscription) return;
-    const plan = plans.find((p) => p.id === subscription.planId);
-    el.planChip.textContent = 'Plan: ' + (plan ? plan.name : subscription.planId);
-    el.planChip.hidden = false;
-  } catch (_) {
-    /* plan chip is optional */
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Password reset (super admin only)
-// ---------------------------------------------------------------------------
-function setResetMessage(text, kind) {
-  el.resetMessage.textContent = text || '';
-  el.resetMessage.className = 'form-message' + (kind ? ' ' + kind : '');
-}
-
-async function loadResetPanel() {
-  try {
-    const { users } = await apiJson('/api/admin/users');
-    el.resetSelect.innerHTML = '';
-    for (const u of users || []) {
-      const opt = document.createElement('option');
-      opt.value = u.email;
-      opt.textContent = u.email + (u.role === 'super_admin' ? ' (super admin)' : '');
-      el.resetSelect.appendChild(opt);
-    }
-    el.resetPanel.hidden = false;
-  } catch (_) {
-    /* not a super admin, or listing failed — leave the panel hidden */
-  }
-}
-
-el.resetForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const email = el.resetSelect.value;
-  if (!email) return;
-  el.resetBtn.disabled = true;
-  el.resetOutput.hidden = true;
-  setResetMessage('Generating…', '');
-  try {
-    const { resetPath, expiresInMinutes } = await apiJson('/api/admin/reset-link', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email }),
-    });
-    el.resetUrl.value = location.origin + resetPath;
-    el.resetOutput.hidden = false;
-    setResetMessage(
-      'Send this link to ' + email + '. It works once and expires in ' + expiresInMinutes + ' minutes.',
-      'success'
-    );
-  } catch (err) {
-    setResetMessage(err.message, 'error');
-  } finally {
-    el.resetBtn.disabled = false;
-  }
-});
-
-el.resetCopy.addEventListener('click', async () => {
-  try {
-    await navigator.clipboard.writeText(el.resetUrl.value);
-    el.resetCopy.textContent = 'Copied ✓';
-    setTimeout(() => (el.resetCopy.textContent = 'Copy link'), 1500);
-  } catch (_) {
-    el.resetUrl.select();
-  }
-});
 
 // ---------------------------------------------------------------------------
 // Events
@@ -373,31 +275,7 @@ el.createForm.addEventListener('submit', async (e) => {
   }
 });
 
-el.logoutBtn.addEventListener('click', async () => {
-  try {
-    await fetch('/api/logout', { method: 'POST' });
-  } catch (_) {
-    /* ignore */
-  }
-  location.href = '/present';
-});
-
 // ---------------------------------------------------------------------------
 // Boot
 // ---------------------------------------------------------------------------
-(async function boot() {
-  let session;
-  try {
-    session = await fetch('/api/session').then((r) => r.json());
-  } catch (_) {
-    session = { authenticated: false };
-  }
-  if (!session.authenticated) {
-    location.href = '/login?next=' + encodeURIComponent('/dashboard');
-    return;
-  }
-  if (el.accountEmail) el.accountEmail.textContent = session.email;
-  const tasks = [loadPlan(), loadPolls().catch((err) => setCreateMessage(err.message, 'error'))];
-  if (session.isSuperAdmin) tasks.push(loadResetPanel());
-  await Promise.all(tasks);
-})();
+loadPolls().catch((err) => setCreateMessage(err.message, 'error'));

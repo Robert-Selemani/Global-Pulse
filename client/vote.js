@@ -22,7 +22,9 @@ const state = {
 const $ = (id) => document.getElementById(id);
 const el = {
   pollTitle: $('poll-title'),
+  accountBox: $('account-box'),
   accountEmail: $('account-email'),
+  organizerLink: $('organizer-link'),
   logoutBtn: $('logout-btn'),
   form: $('entry-form'),
   formTitle: $('form-title'),
@@ -101,10 +103,6 @@ el.form.addEventListener('submit', async (e) => {
     const payload = await res.json();
     if (!res.ok) {
       if (payload.code === 'BAD_CODE') revealCodeField();
-      if (res.status === 401) {
-        location.href = '/login?next=' + encodeURIComponent('/vote?poll=' + POLL_SLUG);
-        return;
-      }
       throw new Error(payload.error || 'Submission failed');
     }
     GP.applyData(payload.data);
@@ -243,17 +241,14 @@ function lockArchived() {
 // Boot
 // ---------------------------------------------------------------------------
 (async function boot() {
-  // Gate: must be logged in.
+  // No login gate: anyone with the link can participate. Signed-in organizers
+  // see their account controls; everyone else joins as an anonymous guest
+  // (identified by a browser cookie so they can still edit their own entries).
   let session;
   try {
     session = await fetch('/api/session').then((r) => r.json());
   } catch (_) {
     session = { authenticated: false };
-  }
-  if (!session.authenticated) {
-    const next = '/vote?poll=' + POLL_SLUG + (urlCode ? '&code=' + encodeURIComponent(urlCode) : '');
-    location.href = '/login?next=' + encodeURIComponent(next);
-    return;
   }
 
   // Resolve the poll first so a bad slug fails clearly.
@@ -278,7 +273,16 @@ function lockArchived() {
     return;
   }
 
-  if (el.accountEmail) el.accountEmail.textContent = session.email;
+  // Signed-in organizers get their account controls; guests get an "Organizer"
+  // link to the dashboard (which handles its own login).
+  if (session.authenticated) {
+    if (el.accountEmail) el.accountEmail.textContent = session.email;
+    if (el.accountBox) el.accountBox.hidden = false;
+    if (el.organizerLink) el.organizerLink.hidden = true;
+  } else {
+    if (el.accountBox) el.accountBox.hidden = true;
+    if (el.organizerLink) el.organizerLink.hidden = false;
+  }
 
   // Seed participation code from the URL (scanned QR) or a previous session.
   let savedCode = urlCode || '';

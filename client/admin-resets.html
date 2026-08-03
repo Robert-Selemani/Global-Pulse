@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Password resets — Global Pulse</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <div id="app-sidebar"></div>
+      <main class="app-main">
+        <div class="app-main-inner">
+          <h1 class="page-title">Password resets</h1>
+          <section class="dash-card">
+            <h2>Generate a reset link</h2>
+            <p class="hint">
+              For a locked-out account, generate a one-time link and send it to them
+              directly. The link works once and expires in an hour.
+            </p>
+            <form id="reset-link-form" class="create-form" autocomplete="off">
+              <div class="create-row">
+                <select id="reset-user-select" aria-label="Account to reset"></select>
+                <button type="submit" class="admin-btn" id="reset-link-btn">
+                  Generate reset link
+                </button>
+              </div>
+              <p class="form-message" id="reset-link-message" role="status"></p>
+            </form>
+            <div class="poll-code" id="reset-link-output" hidden>
+              <div class="code-line">
+                <input type="text" id="reset-link-url" readonly aria-label="Reset link" />
+              </div>
+              <button type="button" class="mini-btn" id="reset-link-copy">Copy link</button>
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+
+    <script src="/app-nav.js"></script>
+    <script src="/admin-resets.js"></script>
+  </body>
+</html>

@@ -1721,6 +1721,30 @@ function sessionCookie(req, token, maxAgeSec) {
   return attrs.join('; ');
 }
 
+// --- Participant identity --------------------------------------------------
+// A participant is either the signed-in user or an anonymous browser, tracked
+// by a long-lived cookie. This lets anyone join and edit their own entries from
+// a link with NO login. Namespaced ('u:'/'a:') so the two id spaces never
+// collide. Mints and sets the cookie (via res) when a new anon id is needed.
+const PID_COOKIE = 'gp_pid';
+
+function participantId(req, res, user) {
+  if (user) return 'u:' + user.id;
+  const existing = parseCookies(req)[PID_COOKIE];
+  if (existing && /^[A-Za-z0-9_-]{16,64}$/.test(existing)) return 'a:' + existing;
+  const fresh = crypto.randomBytes(18).toString('base64url');
+  const attrs = [
+    PID_COOKIE + '=' + fresh,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Lax',
+    'Max-Age=' + 365 * 24 * 60 * 60,
+  ];
+  if (isSecure(req)) attrs.push('Secure');
+  res.setHeader('Set-Cookie', attrs.join('; '));
+  return 'a:' + fresh;
+}
+
 // --- Simple in-memory login rate limiting ---------------------------------
 const loginAttempts = new Map();
 const RL_WINDOW_MS = 15 * 60 * 1000;
@@ -1941,6 +1965,28 @@ const server = http.createServer(async (req, res) => {
         { email: account.email, role: account.role, isSuperAdmin: account.role === ROLE_SUPER },
         { 'Set-Cookie': sessionCookie(req, token, SESSION_TTL_MS / 1000) }
       );
+      return;
+    }
+
+    // --- API: change your own password (must know the current one) ---
+    if (req.method === 'POST' && pathname === '/api/change-password') {
+      if (!user) {
+        sendJson(res, 401, { error: 'Please sign in.' });
+        return;
+      }
+      const data = JSON.parse((await readBody(req)) || '{}');
+      const account = await store.getUserByEmail(user.email); // carries passwordHash
+      if (!account || !verifyPassword(String(data.currentPassword || ''), account.passwordHash)) {
+        sendJson(res, 403, { error: 'Your current password is incorrect.' });
+        return;
+      }
+      const next = String(data.newPassword || '');
+      if (next.length < 6) {
+        sendJson(res, 400, { error: 'New password must be at least 6 characters.' });
+        return;
+      }
+      await store.setUserPassword(account.id, hashPassword(next));
+      sendJson(res, 200, { ok: true });
       return;
     }
 
@@ -2199,13 +2245,11 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      // The logged-in user's own submissions in this poll.
+      // The requester's own submissions in this poll (by account or by the
+      // anonymous browser cookie).
       if (sub === 'mine' && req.method === 'GET') {
-        if (!user) {
-          sendJson(res, 200, { submissions: [] });
-          return;
-        }
-        const mine = await store.listByParticipant(poll.id, String(user.id));
+        const pid = participantId(req, res, user);
+        const mine = await store.listByParticipant(poll.id, pid);
         sendJson(res, 200, {
           submissions: mine.map((r) => ({
             id: r.id,
@@ -2217,12 +2261,9 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      // Submit a community entry to this poll.
+      // Submit a community entry to this poll. No login required — the
+      // participant is identified by account or anonymous browser cookie.
       if (sub === 'submit' && req.method === 'POST') {
-        if (!user) {
-          sendJson(res, 401, { error: 'Please sign in to participate.' });
-          return;
-        }
         if (poll.status === 'archived') {
           sendJson(res, 403, { error: 'This poll has been archived and is read-only.' });
           return;
@@ -2237,10 +2278,11 @@ const server = http.createServer(async (req, res) => {
           sendJson(res, 403, { error: 'Invalid participation code.', code: 'BAD_CODE' });
           return;
         }
+        const pid = participantId(req, res, user);
         const community = cleanDisplay(data.community);
         const id = await store.add({
           pollId: poll.id,
-          participantId: String(user.id),
+          participantId: pid,
           countryId: String(data.countryId).trim(),
           countryName: String(data.countryName).trim(),
           community,
@@ -2253,14 +2295,10 @@ const server = http.createServer(async (req, res) => {
       // Edit or withdraw one's own submission in this poll.
       const subEdit = sub.match(/^submission\/(\d+)$/);
       if (subEdit) {
-        if (!user) {
-          sendJson(res, 401, { error: 'Please sign in.' });
-          return;
-        }
+        const pid = participantId(req, res, user);
         const id = Number(subEdit[1]);
         const record = await store.getById(id);
-        const owns =
-          record && record.pollId === poll.id && record.participantId === String(user.id);
+        const owns = record && record.pollId === poll.id && record.participantId === pid;
 
         if (req.method === 'DELETE') {
           if (!owns) {
@@ -2354,6 +2392,9 @@ const server = http.createServer(async (req, res) => {
       '/signup': 'signup.html',
       '/forgot-password': 'forgot.html',
       '/reset': 'reset.html',
+      '/account': 'account.html',
+      '/admin/users': 'admin-users.html',
+      '/admin/resets': 'admin-resets.html',
     };
     if (req.method === 'GET' && Object.prototype.hasOwnProperty.call(PAGES, pathname)) {
       serveStatic(req, res, '/' + PAGES[pathname]);
