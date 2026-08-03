@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Reset password — Global Pulse</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="auth-body">
+    <main class="auth-wrap">
+      <form class="auth-card" id="reset-form" autocomplete="on" hidden>
+        <div class="brand center">
+          <span class="pulse-dot" aria-hidden="true"></span>
+          <h1>Global Pulse</h1>
+        </div>
+        <h2>Choose a new password</h2>
+        <p class="hint" id="reset-account"></p>
+
+        <label for="auth-password">New password</label>
+        <input
+          id="auth-password"
+          type="password"
+          autocomplete="new-password"
+          minlength="6"
+          required
+        />
+
+        <label for="auth-password2">Confirm new password</label>
+        <input
+          id="auth-password2"
+          type="password"
+          autocomplete="new-password"
+          minlength="6"
+          required
+        />
+
+        <p class="form-message" id="auth-message" role="status"></p>
+        <button type="submit" class="admin-btn full" id="auth-submit">
+          Set new password
+        </button>
+      </form>
+
+      <div class="auth-card" id="reset-invalid" hidden>
+        <div class="brand center">
+          <span class="pulse-dot" aria-hidden="true"></span>
+          <h1>Global Pulse</h1>
+        </div>
+        <h2>Link expired</h2>
+        <p class="hint">
+          This reset link is invalid or has expired. Ask your organizer for a
+          fresh one.
+        </p>
+        <p class="auth-alt"><a href="/login">← Back to log in</a></p>
+      </div>
+    </main>
+
+    <script src="/reset.js"></script>
+  </body>
+</html>

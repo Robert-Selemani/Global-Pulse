@@ -24,6 +24,14 @@ const el = {
   activeEmpty: $('active-empty'),
   pastEmpty: $('past-empty'),
   resultsLink: $('results-link'),
+  resetPanel: $('reset-panel'),
+  resetForm: $('reset-link-form'),
+  resetSelect: $('reset-user-select'),
+  resetBtn: $('reset-link-btn'),
+  resetMessage: $('reset-link-message'),
+  resetOutput: $('reset-link-output'),
+  resetUrl: $('reset-link-url'),
+  resetCopy: $('reset-link-copy'),
 };
 
 function setCreateMessage(text, kind) {
@@ -280,6 +288,66 @@ async function loadPlan() {
 }
 
 // ---------------------------------------------------------------------------
+// Password reset (super admin only)
+// ---------------------------------------------------------------------------
+function setResetMessage(text, kind) {
+  el.resetMessage.textContent = text || '';
+  el.resetMessage.className = 'form-message' + (kind ? ' ' + kind : '');
+}
+
+async function loadResetPanel() {
+  try {
+    const { users } = await apiJson('/api/admin/users');
+    el.resetSelect.innerHTML = '';
+    for (const u of users || []) {
+      const opt = document.createElement('option');
+      opt.value = u.email;
+      opt.textContent = u.email + (u.role === 'super_admin' ? ' (super admin)' : '');
+      el.resetSelect.appendChild(opt);
+    }
+    el.resetPanel.hidden = false;
+  } catch (_) {
+    /* not a super admin, or listing failed — leave the panel hidden */
+  }
+}
+
+el.resetForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const email = el.resetSelect.value;
+  if (!email) return;
+  el.resetBtn.disabled = true;
+  el.resetOutput.hidden = true;
+  setResetMessage('Generating…', '');
+  try {
+    const { resetPath, expiresInMinutes } = await apiJson('/api/admin/reset-link', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    el.resetUrl.value = location.origin + resetPath;
+    el.resetOutput.hidden = false;
+    setResetMessage(
+      'Send this link to ' + email + '. It works once and expires in ' + expiresInMinutes + ' minutes.',
+      'success'
+    );
+  } catch (err) {
+    setResetMessage(err.message, 'error');
+  } finally {
+    el.resetBtn.disabled = false;
+  }
+});
+
+el.resetCopy.addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(el.resetUrl.value);
+    el.resetCopy.textContent = 'Copied ✓';
+    setTimeout(() => (el.resetCopy.textContent = 'Copy link'), 1500);
+  } catch (_) {
+    el.resetUrl.select();
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Events
 // ---------------------------------------------------------------------------
 el.createForm.addEventListener('submit', async (e) => {
@@ -329,5 +397,7 @@ el.logoutBtn.addEventListener('click', async () => {
     return;
   }
   if (el.accountEmail) el.accountEmail.textContent = session.email;
-  await Promise.all([loadPlan(), loadPolls().catch((err) => setCreateMessage(err.message, 'error'))]);
+  const tasks = [loadPlan(), loadPolls().catch((err) => setCreateMessage(err.message, 'error'))];
+  if (session.isSuperAdmin) tasks.push(loadResetPanel());
+  await Promise.all(tasks);
 })();

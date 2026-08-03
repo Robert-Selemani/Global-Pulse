@@ -48,6 +48,30 @@
         </form>
       </section>
 
+      <!-- Reset a password (super admin only) -->
+      <section class="dash-card" id="reset-panel" hidden>
+        <h2>Reset a password</h2>
+        <p class="hint">
+          Generate a one-time link for a locked-out account, then send it to them
+          directly. The link works once and expires in an hour.
+        </p>
+        <form id="reset-link-form" class="create-form" autocomplete="off">
+          <div class="create-row">
+            <select id="reset-user-select" aria-label="Account to reset"></select>
+            <button type="submit" class="admin-btn" id="reset-link-btn">
+              Generate reset link
+            </button>
+          </div>
+          <p class="form-message" id="reset-link-message" role="status"></p>
+        </form>
+        <div class="poll-code" id="reset-link-output" hidden>
+          <div class="code-line">
+            <input type="text" id="reset-link-url" readonly aria-label="Reset link" />
+          </div>
+          <button type="button" class="mini-btn" id="reset-link-copy">Copy link</button>
+        </div>
+      </section>
+
       <!-- Active polls -->
       <section class="dash-section">
         <div class="community-header">

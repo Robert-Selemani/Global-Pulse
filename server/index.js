@@ -69,6 +69,7 @@ function resolveSessionSecret() {
 }
 const SESSION_SECRET = resolveSessionSecret();
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
+const RESET_TTL_MS = 60 * 60 * 1000; // 1 hour — password-reset link lifetime
 const COOKIE_NAME = 'gp_session';
 const ROLE_SUPER = 'super_admin';
 const ROLE_USER = 'end_user';
@@ -445,6 +446,24 @@ function makeFileStore(dataFile) {
       subscriptions.push(newSubscription(user.id));
       save();
       return { id: user.id, email: user.email, role: user.role };
+    },
+    async getUserAuthById(id) {
+      const u = users.find((x) => x.id === Number(id));
+      if (!u) return null;
+      return { id: u.id, email: u.email, role: u.role, passwordHash: u.passwordHash };
+    },
+    async listUsers() {
+      return users
+        .slice()
+        .sort((a, b) => a.id - b.id)
+        .map((u) => ({ id: u.id, email: u.email, role: u.role }));
+    },
+    async setUserPassword(userId, passwordHash) {
+      const u = users.find((x) => x.id === Number(userId));
+      if (!u) return false;
+      u.passwordHash = passwordHash;
+      save();
+      return true;
     },
 
     // --- Plans & subscriptions (schema only) ---
@@ -858,6 +877,30 @@ function makePostgresStore(connectionString) {
         [user.id, DEFAULT_PLAN_ID]
       );
       return user;
+    },
+    async getUserAuthById(id) {
+      const { rows } = await pool.query(
+        'SELECT id, email, password_hash, role FROM users WHERE id = $1',
+        [Number(id)]
+      );
+      if (!rows[0]) return null;
+      return {
+        id: Number(rows[0].id),
+        email: rows[0].email,
+        passwordHash: rows[0].password_hash,
+        role: rows[0].role,
+      };
+    },
+    async listUsers() {
+      const { rows } = await pool.query('SELECT id, email, role FROM users ORDER BY id');
+      return rows.map((r) => ({ id: Number(r.id), email: r.email, role: r.role }));
+    },
+    async setUserPassword(userId, passwordHash) {
+      const { rowCount } = await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [
+        passwordHash,
+        Number(userId),
+      ]);
+      return rowCount > 0;
     },
 
     // --- Plans & subscriptions (schema only) ---
@@ -1351,6 +1394,25 @@ function makeSqliteStore(dbPath) {
       ).run(id, DEFAULT_PLAN_ID, Date.now());
       return { id, email: String(email).toLowerCase(), role };
     },
+    async getUserAuthById(id) {
+      const row = db
+        .prepare('SELECT id, email, password_hash, role FROM users WHERE id = ?')
+        .get(Number(id));
+      if (!row) return null;
+      return { id: num(row.id), email: row.email, passwordHash: row.password_hash, role: row.role };
+    },
+    async listUsers() {
+      return db
+        .prepare('SELECT id, email, role FROM users ORDER BY id')
+        .all()
+        .map((r) => ({ id: num(r.id), email: r.email, role: r.role }));
+    },
+    async setUserPassword(userId, passwordHash) {
+      return (
+        db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(passwordHash, Number(userId))
+          .changes > 0
+      );
+    },
 
     // --- Plans & subscriptions (schema only) ---
     async listPlans() {
@@ -1577,6 +1639,51 @@ function signToken(payload) {
 
 function makeSessionToken(userId) {
   return signToken(userId + '.' + (Date.now() + SESSION_TTL_MS));
+}
+
+// --- Password reset tokens (stateless, single-use) -------------------------
+// A reset token is HMAC-signed like a session, but its payload also carries a
+// fingerprint of the account's *current* password hash. A successful reset
+// changes that hash, so any outstanding token stops validating — single-use
+// behaviour with no server-side token storage.
+function pwFingerprint(passwordHash) {
+  return crypto
+    .createHmac('sha256', SESSION_SECRET)
+    .update('pwreset:' + (passwordHash || ''))
+    .digest('base64url')
+    .slice(0, 16);
+}
+
+function makeResetToken(user) {
+  const payload =
+    'r.' + user.id + '.' + (Date.now() + RESET_TTL_MS) + '.' + pwFingerprint(user.passwordHash);
+  return signToken(payload);
+}
+
+/** Resolve a reset token to its account, or null if invalid/expired/already used. */
+async function verifyResetToken(token) {
+  if (!token) return null;
+  const idx = token.lastIndexOf('.');
+  if (idx < 0) return null;
+  const payload = token.slice(0, idx);
+  const sig = token.slice(idx + 1);
+  const expected = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('base64url');
+  const a = Buffer.from(sig);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  const parts = payload.split('.');
+  if (parts[0] !== 'r') return null;
+  const userId = Number(parts[1]);
+  const expiry = Number(parts[2]);
+  const fp = String(parts[3] || '');
+  if (!Number.isFinite(userId) || !Number.isFinite(expiry) || Date.now() > expiry) return null;
+  const account = await store.getUserAuthById(userId);
+  if (!account) return null;
+  const expectedFp = pwFingerprint(account.passwordHash);
+  const fa = Buffer.from(fp);
+  const fb = Buffer.from(expectedFp);
+  if (fa.length !== fb.length || !crypto.timingSafeEqual(fa, fb)) return null;
+  return account;
 }
 
 function parseCookies(req) {
@@ -1834,6 +1941,68 @@ const server = http.createServer(async (req, res) => {
         { email: account.email, role: account.role, isSuperAdmin: account.role === ROLE_SUPER },
         { 'Set-Cookie': sessionCookie(req, token, SESSION_TTL_MS / 1000) }
       );
+      return;
+    }
+
+    // --- API: list accounts (super admin, for the reset-link picker) ---
+    if (req.method === 'GET' && pathname === '/api/admin/users') {
+      if (!user || user.role !== ROLE_SUPER) {
+        sendJson(res, 403, { error: 'Forbidden.' });
+        return;
+      }
+      sendJson(res, 200, { users: await store.listUsers() });
+      return;
+    }
+
+    // --- API: super admin generates a one-time password-reset link ---
+    if (req.method === 'POST' && pathname === '/api/admin/reset-link') {
+      if (!user || user.role !== ROLE_SUPER) {
+        sendJson(res, 403, { error: 'Only a super admin can generate reset links.' });
+        return;
+      }
+      const data = JSON.parse((await readBody(req)) || '{}');
+      const email = String(data.email || '').trim().toLowerCase();
+      const account = await store.getUserByEmail(email);
+      if (!account) {
+        sendJson(res, 404, { error: 'No account with that email.' });
+        return;
+      }
+      const token = makeResetToken(account);
+      sendJson(res, 200, {
+        email: account.email,
+        // The client prepends its own origin; keeps us proxy-agnostic on Render.
+        resetPath: '/reset?token=' + encodeURIComponent(token),
+        expiresInMinutes: Math.round(RESET_TTL_MS / 60000),
+      });
+      return;
+    }
+
+    // --- API: validate a reset token (so the reset page can greet or warn) ---
+    if (req.method === 'GET' && pathname === '/api/reset/validate') {
+      const account = await verifyResetToken(url.searchParams.get('token'));
+      sendJson(res, 200, account ? { valid: true, email: account.email } : { valid: false });
+      return;
+    }
+
+    // --- API: complete a password reset via a valid token ---
+    if (req.method === 'POST' && pathname === '/api/reset-password') {
+      if (rateLimited(clientIp(req))) {
+        sendJson(res, 429, { error: 'Too many attempts. Try again later.' });
+        return;
+      }
+      const data = JSON.parse((await readBody(req)) || '{}');
+      const password = String(data.password || '');
+      if (password.length < 6) {
+        sendJson(res, 400, { error: 'Password must be at least 6 characters.' });
+        return;
+      }
+      const account = await verifyResetToken(data.token);
+      if (!account) {
+        sendJson(res, 400, { error: 'This reset link is invalid or has expired.' });
+        return;
+      }
+      await store.setUserPassword(account.id, hashPassword(password));
+      sendJson(res, 200, { ok: true, email: account.email });
       return;
     }
 
@@ -2183,6 +2352,8 @@ const server = http.createServer(async (req, res) => {
       '/dashboard': 'dashboard.html',
       '/login': 'login.html',
       '/signup': 'signup.html',
+      '/forgot-password': 'forgot.html',
+      '/reset': 'reset.html',
     };
     if (req.method === 'GET' && Object.prototype.hasOwnProperty.call(PAGES, pathname)) {
       serveStatic(req, res, '/' + PAGES[pathname]);

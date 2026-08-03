@@ -1140,6 +1140,20 @@ body {
 .code-line {
   font-size: 13px;
   color: var(--muted);
+  width: 100%;
+}
+
+/* Read-only reset-link field on the dashboard's reset panel. */
+#reset-link-url {
+  width: 100%;
+  min-width: 260px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--text);
+  background: #0e1725;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
 }
 
 .code-pill {
