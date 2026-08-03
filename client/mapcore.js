@@ -12,7 +12,7 @@
 window.GP = (function () {
   const POLL_INTERVAL_MS = 4000;
   const SVGNS = 'http://www.w3.org/2000/svg';
-  const FLAG_BASE = 'https://flagcdn.com';
+  const FLAG_BASE = '/vendor/flags'; // bundled locally — no external CDN
   const CONTINENTS = [
     'Africa',
     'Asia',
@@ -92,7 +92,7 @@ window.GP = (function () {
   // --- Flag fills -----------------------------------------------------------
   function flagUrl(id) {
     const iso2 = state.flags[id];
-    return iso2 ? FLAG_BASE + '/w320/' + iso2 + '.png' : null;
+    return iso2 ? FLAG_BASE + '/' + iso2 + '.png' : null;
   }
   function patternId(id) {
     return 'flag-' + id;
@@ -281,7 +281,7 @@ window.GP = (function () {
       if (iso2) {
         const flag = document.createElement('img');
         flag.className = 'row-flag';
-        flag.src = FLAG_BASE + '/24x18/' + iso2 + '.png';
+        flag.src = FLAG_BASE + '/' + iso2 + '.png';
         flag.alt = '';
         flag.loading = 'lazy';
         left.appendChild(flag);

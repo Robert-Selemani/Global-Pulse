@@ -1780,7 +1780,7 @@ function setSecurityHeaders(res) {
     'Content-Security-Policy',
     [
       "default-src 'self'",
-      "img-src 'self' https://flagcdn.com data:",
+      "img-src 'self' data:",
       "style-src 'self' 'unsafe-inline'",
       "script-src 'self'",
       "connect-src 'self'",

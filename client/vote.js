@@ -149,7 +149,7 @@ function renderMine(subs) {
     if (iso2) {
       const flag = document.createElement('img');
       flag.className = 'row-flag';
-      flag.src = GP.FLAG_BASE + '/24x18/' + iso2 + '.png';
+      flag.src = GP.FLAG_BASE + '/' + iso2 + '.png';
       flag.alt = '';
       label.appendChild(flag);
     }
