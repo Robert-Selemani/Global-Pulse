@@ -62,20 +62,23 @@ super admin.
 
 ## Roles
 
-Accounts are email + password (passwords hashed with `scrypt`). **The first
-person to sign up is the super admin; everyone who signs up afterwards is an
-end user.** **Any account can create polls** and becomes the organizer (owner)
-of the polls it creates.
+**Participating needs no account** - accounts are only for organizers.
+Organizer accounts are email + password (passwords hashed with `scrypt`). **The
+first person to sign up is the super admin; everyone who signs up afterwards is
+a regular account.** **Any account can create polls** and becomes the organizer
+(owner) of the polls it creates.
 
-- **End user / participant:** add communities and **edit or withdraw their own
-  submissions**, browse the sidebar, and freely **zoom and pan** the map. When a
-  poll has a participation code, they enter it (or arrive via the QR link) to
-  submit.
-- **Organizer (any account):** everything above, plus a **dashboard** for the
-  polls they own - create polls, generate/regenerate/remove each poll's
-  **participation code + QR**, **export CSV**, and **archive** or delete.
-- **Super admin (first account):** everything above, and may manage **any**
-  poll on the platform.
+- **Participant (no account):** anyone with the join link or QR. Add communities
+  and **edit or withdraw their own submissions** - identified by a browser
+  cookie, so their entries stay editable on that device - and freely **zoom and
+  pan** the map. When a poll has a participation code, they enter it (or arrive
+  via the QR link) to submit.
+- **Organizer (any account):** signs in to a **sidebar** app - create polls,
+  generate/regenerate/remove each poll's **participation code + QR**, share
+  **join links**, **export CSV**, **archive** or delete, and change their own
+  password on the **Account** page.
+- **Super admin (first account):** everything an organizer can do, for **any**
+  poll on the platform, plus the **Users** and **Password resets** pages.
 
 ## Password resets
 
