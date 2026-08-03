@@ -23,6 +23,7 @@ const el = {
   pastCount: $('past-count'),
   activeEmpty: $('active-empty'),
   pastEmpty: $('past-empty'),
+  resultsLink: $('results-link'),
 };
 
 function setCreateMessage(text, kind) {
@@ -43,9 +44,17 @@ function fmtDate(ms) {
   }
 }
 
-function joinUrl(poll) {
+// URL for the QR code: shown on-screen in the room, so we embed the code — a
+// scan is a frictionless join with no code prompt (physical presence is the gate).
+function qrUrl(poll) {
   const base = location.origin + '/vote?poll=' + encodeURIComponent(poll.slug);
   return poll.participationCode ? base + '&code=' + encodeURIComponent(poll.participationCode) : base;
+}
+
+// URL for the shareable "join link": a link can be forwarded to anyone, so we do
+// NOT embed the code — recipients are prompted to enter it (share it separately).
+function shareUrl(poll) {
+  return location.origin + '/vote?poll=' + encodeURIComponent(poll.slug);
 }
 
 function renderQr(container, text) {
@@ -159,8 +168,12 @@ function pollCard(poll) {
       codeBox.appendChild(codeLine);
       const qr = document.createElement('div');
       qr.className = 'qr-box small';
-      renderQr(qr, joinUrl(poll));
+      renderQr(qr, qrUrl(poll));
       codeBox.appendChild(qr);
+      const qrHint = document.createElement('p');
+      qrHint.className = 'hint';
+      qrHint.textContent = 'Scanning this QR joins without a code. The copied link asks for the code above.';
+      codeBox.appendChild(qrHint);
     } else {
       const open = document.createElement('p');
       open.className = 'hint';
@@ -183,11 +196,11 @@ function pollCard(poll) {
     actions.appendChild(
       actionBtn('Copy join link', '', async (e) => {
         try {
-          await navigator.clipboard.writeText(joinUrl(poll));
+          await navigator.clipboard.writeText(shareUrl(poll));
           e.target.textContent = 'Copied ✓';
           setTimeout(() => (e.target.textContent = 'Copy join link'), 1500);
         } catch (_) {
-          window.prompt('Copy this join link:', joinUrl(poll));
+          window.prompt('Copy this join link:', shareUrl(poll));
         }
       })
     );
@@ -232,6 +245,18 @@ function renderPolls(polls) {
 
   for (const p of active) el.activePolls.appendChild(pollCard(p));
   for (const p of past) el.pastPolls.appendChild(pollCard(p));
+
+  // Point the header "Results" link at a real poll (newest active, else newest
+  // archived) so it opens live data — not the empty legacy default poll.
+  if (el.resultsLink) {
+    const target = active[0] || past[0] || null;
+    if (target) {
+      el.resultsLink.href = '/p/' + target.slug;
+      el.resultsLink.hidden = false;
+    } else {
+      el.resultsLink.hidden = true;
+    }
+  }
 }
 
 async function loadPolls() {
