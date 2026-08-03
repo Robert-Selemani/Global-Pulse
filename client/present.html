@@ -29,6 +29,12 @@
     <main class="layout layout--present">
       <section class="map-panel">
         <div id="map" role="application" aria-label="World community map"></div>
+        <div class="map-focus" id="map-focus">
+          <label for="continent-select">🌍 Focus</label>
+          <select id="continent-select" aria-label="Focus the map on a continent">
+            <option value="">Whole world</option>
+          </select>
+        </div>
         <div class="zoom-control">
           <label for="zoom-slider" id="zoom-indicator" aria-live="polite">Zoom 100%</label>
           <input type="range" id="zoom-slider" min="2" max="6" step="0.05" value="2" aria-label="Zoom level" />

@@ -375,7 +375,9 @@ window.GP = (function () {
       const layer = state.layersById[feature.id];
       if (layer) bounds.extend(layer.getBounds());
     }
-    if (bounds.isValid()) map.fitBounds(bounds, { padding: [30, 30], maxZoom: 5 });
+    // Tight padding + the map's max zoom so the region fills the viewport as
+    // fully as its shape allows — no manual zooming needed when presenting.
+    if (bounds.isValid()) map.fitBounds(bounds, { padding: [8, 8], maxZoom: 6 });
   }
 
   // --- Data flow ------------------------------------------------------------
