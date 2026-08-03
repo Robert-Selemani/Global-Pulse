@@ -49,6 +49,8 @@ Existing polling platforms have two big weaknesses this tool fixes:
 | **Presentation (default)** | `/` (or `/present`) | Public | The legacy/default poll's map, for installs migrated from the original single-poll app. |
 | **Sign up** | `/signup` | Anyone | Create an account. **The first account becomes the super admin.** |
 | **Log in** | `/login` | Anyone with an account | Sign in. |
+| **Forgot password** | `/forgot-password` | Anyone | Explains how to get a reset link (from the super admin). |
+| **Reset password** | `/reset?token=<token>` | Holder of a valid link | Set a new password using a one-time reset link. |
 
 ## Roles
 
@@ -66,6 +68,33 @@ of the polls it creates.
   **participation code + QR**, **export CSV**, and **archive** or delete.
 - **Super admin (first account):** everything above, and may manage **any**
   poll on the platform.
+
+## Password resets
+
+There is no email provider wired up, so resets are **admin-mediated** — no
+external service required.
+
+- A locked-out user visits **`/forgot-password`** (linked from the login page)
+  and asks their organizer for a link.
+- The **super admin** opens the **"Reset a password"** panel on the dashboard,
+  picks the account, and clicks **Generate reset link**. They send the resulting
+  one-time `/reset?token=…` URL to the user out-of-band (chat, in person).
+- The user opens the link, sets a new password, and is redirected to log in.
+
+Reset tokens are stateless: HMAC-signed like sessions, but bound to a
+fingerprint of the account's **current** password hash. A successful reset
+changes that hash, so the token stops validating — making it **single-use**
+with no server-side token storage. Links **expire after one hour**.
+
+> **Super-admin lockout.** Generating a link requires a signed-in super admin,
+> so if the super-admin account itself is locked out, use the CLI once to get
+> back in — run it wherever the store lives (locally, or in the Render shell,
+> which has `DATABASE_URL` set):
+>
+> ```bash
+> node server/reset-password.js --list             # see accounts
+> node server/reset-password.js you@example.com    # reset (prints a new password)
+> ```
 
 ## Polls & past-poll history
 
@@ -158,6 +187,10 @@ Global-Pulse/
 | `POST` | `/api/login` | Log in `{ email, password }`; sets a session cookie. |
 | `POST` | `/api/logout` | Clears the session. |
 | `GET` | `/api/session` | Current auth state: `{ authenticated, email, role, isSuperAdmin, hasUsers }`. |
+| `GET` | `/api/admin/users` | List accounts `{ id, email, role }` for the reset picker. *Super admin only.* |
+| `POST` | `/api/admin/reset-link` | Generate a one-time reset link `{ email }` → `{ resetPath, expiresInMinutes }`. *Super admin only.* |
+| `GET` | `/api/reset/validate` | Check a reset token `?token=…` → `{ valid, email? }`. |
+| `POST` | `/api/reset-password` | Set a new password `{ token, password }` via a valid reset link. |
 | `GET` | `/api/plans` | Available subscription plans (public). |
 | `GET`/`POST` | `/api/subscription` | Read / set the current user's plan. *Schema only — no billing.* |
 | `GET` | `/api/data`, `/api/config` | Legacy aliases resolving to the default (migrated) poll. |
@@ -257,8 +290,10 @@ implement the identical store interface, so they behave the same.
 
 ### Not yet wired up
 
-Billing (Stripe) and plan-limit enforcement, email verification / password
-reset, and real-time updates via SSE (the map currently polls).
+Billing (Stripe) and plan-limit enforcement, email verification and
+**email-based** self-serve password reset (resets are currently admin-mediated —
+see [Password resets](#password-resets)), and real-time updates via SSE (the map
+currently polls).
 
 ## License
 
