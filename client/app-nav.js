@@ -13,7 +13,9 @@
   const path = location.pathname;
 
   const ITEMS = [
-    { label: 'Results', href: '/present', match: ['/present', '/p/'] },
+    // Results is the full-bleed public map — open it in a new tab so the app
+    // shell (and this menu) stays put in the original tab.
+    { label: 'Results ↗', href: '/present', match: ['/present', '/p/'], external: true },
     { label: 'Polls', href: '/dashboard', match: ['/dashboard'] },
     { label: 'Account', href: '/account', match: ['/account'] },
     { label: 'Users', href: '/admin/users', match: ['/admin/users'], admin: true },
@@ -53,6 +55,10 @@
       a.href = item.href;
       a.textContent = item.label;
       a.className = 'app-nav-link' + (isActive(item) ? ' active' : '');
+      if (item.external) {
+        a.target = '_blank';
+        a.rel = 'noopener';
+      }
       li.appendChild(a);
       ul.appendChild(li);
     }
