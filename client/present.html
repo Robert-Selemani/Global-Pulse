@@ -16,9 +16,18 @@
       </div>
       <p class="tagline">Communities around the world - live</p>
       <ul class="stats" id="global-stats">
-        <li><strong id="stat-countries">0</strong><span>Countries</span></li>
-        <li><strong id="stat-communities">0</strong><span>Communities</span></li>
-        <li><strong id="stat-users">0</strong><span>Participants</span></li>
+        <li class="stat" data-metric="countries" role="button" tabindex="0"
+            aria-label="Show countries full screen">
+          <strong id="stat-countries">0</strong><span>Countries</span>
+        </li>
+        <li class="stat" data-metric="communities" role="button" tabindex="0"
+            aria-label="Show communities full screen">
+          <strong id="stat-communities">0</strong><span>Communities</span>
+        </li>
+        <li class="stat" data-metric="participants" role="button" tabindex="0"
+            aria-label="Show participants full screen">
+          <strong id="stat-users">0</strong><span>Participants</span>
+        </li>
       </ul>
       <div class="admin-area">
         <a class="admin-btn ghost" href="/dashboard">← Dashboard</a>
@@ -88,6 +97,17 @@
       </aside>
     </main>
 
+    <div class="focus-view" id="focus-view" hidden role="dialog" aria-modal="true"
+         aria-labelledby="focus-title">
+      <button type="button" class="focus-close" id="focus-close" aria-label="Close full screen">✕</button>
+      <div class="focus-inner">
+        <p class="focus-title" id="focus-title"></p>
+        <div class="focus-value" id="focus-value">0</div>
+        <p class="focus-sub" id="focus-sub"></p>
+        <div class="focus-body" id="focus-body"></div>
+      </div>
+    </div>
+
     <footer class="app-footer">
       Developed by
       <a
@@ -96,6 +116,7 @@
         rel="noopener noreferrer"
         >Robert Selemani</a
       >
+      for the Community
     </footer>
 
     <script src="/vendor/leaflet/leaflet.js"></script>
