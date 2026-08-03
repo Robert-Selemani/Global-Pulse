@@ -2384,7 +2384,7 @@ const server = http.createServer(async (req, res) => {
 
     // --- Page routes (clean URLs -> HTML files) ---
     const PAGES = {
-      '/': 'present.html',
+      '/': 'landing.html',
       '/present': 'present.html',
       '/vote': 'vote.html',
       '/dashboard': 'dashboard.html',
