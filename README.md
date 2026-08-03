@@ -43,14 +43,22 @@ Existing polling platforms have two big weaknesses this tool fixes:
 
 | Page | URL | Who | Purpose |
 | --- | --- | --- | --- |
-| **Poll presentation** | `/p/<slug>` | Public | One poll's live map for display on screens - flags, "Countries represented", and running totals. Read-only. |
-| **Dashboard** | `/dashboard` | Logged-in users | Create and manage **your polls**: join links + QR, codes, CSV export, archive, delete. Lists **active** and **past** polls. |
-| **Voting** | `/vote?poll=<slug>` | Logged-in users | Add / edit / withdraw your community in that poll; zoom & pan. |
+| **Results** | `/results/<slug>` (alias `/p/<slug>`) | Public | One poll's live map for display on screens - flag-filled countries, "Countries represented", running totals, and a continent **focus** that fills the map. Read-only. |
+| **Participate** | `/vote?poll=<slug>` | **Anyone (no login)** | Add / edit / withdraw your community; zoom & pan. Identified by a browser cookie, so entries stay editable on that device. Enter the code (or arrive via QR) if the poll requires one. |
+| **Polls** | `/dashboard` | Organizers (signed in) | Create and manage **your polls**: join links + QR, codes, CSV export, archive, delete. Lists **active** and **past** polls. |
+| **Account** | `/account` | Organizers (signed in) | View email, role, and plan; **change your password**. |
+| **Users** | `/admin/users` | Super admin | List every account with its role. |
+| **Password resets** | `/admin/resets` | Super admin | Generate one-time reset links for locked-out accounts. |
 | **Presentation (default)** | `/` (or `/present`) | Public | The legacy/default poll's map, for installs migrated from the original single-poll app. |
 | **Sign up** | `/signup` | Anyone | Create an account. **The first account becomes the super admin.** |
 | **Log in** | `/login` | Anyone with an account | Sign in. |
 | **Forgot password** | `/forgot-password` | Anyone | Explains how to get a reset link (from the super admin). |
 | **Reset password** | `/reset?token=<token>` | Holder of a valid link | Set a new password using a one-time reset link. |
+
+The signed-in organizer pages (**Polls**, **Account**, **Users**, **Password
+resets**) share a left **sidebar** for navigation; its "Results" link opens the
+public map in a new tab. **Users** and **Password resets** appear only for the
+super admin.
 
 ## Roles
 
@@ -151,9 +159,9 @@ Global-Pulse/
   HttpOnly cookies), and login rate limiting.
 - **Frontend:** vanilla JS + [Leaflet](https://leafletjs.com/) rendering a
   GeoJSON map. Represented countries are filled with their flag via SVG
-  patterns (flag images from [flagcdn.com](https://flagcdn.com)). **Leaflet is
-  vendored** into `client/vendor/` so the core map has no runtime CDN
-  dependency.
+  patterns. **Leaflet and all country flags are vendored** into
+  `client/vendor/` (flags under `client/vendor/flags/`), so the app is fully
+  self-contained with **no runtime CDN dependency**.
 
 ### API
 
@@ -163,9 +171,9 @@ Global-Pulse/
 | --- | --- | --- |
 | `GET` | `/api/poll/:slug/data` | Aggregated per-country communities & counts for that poll. |
 | `GET` | `/api/poll/:slug/config` | `{ title, status, participationRequired }`. |
-| `POST` | `/api/poll/:slug/submit` | Add an entry `{ countryId, countryName, community, code }` (login required; blocked when archived). |
-| `GET` | `/api/poll/:slug/mine` | The logged-in user's own submissions in that poll. |
-| `PUT` | `/api/poll/:slug/submission/:id` | Edit one's own submission (ownership enforced). |
+| `POST` | `/api/poll/:slug/submit` | Add an entry `{ countryId, countryName, community, code }`. **No login** - the participant is identified by account or an anonymous browser cookie. Blocked when archived; the code is checked when the poll requires one. |
+| `GET` | `/api/poll/:slug/mine` | The requester's own submissions in that poll (by account or anonymous cookie). |
+| `PUT` | `/api/poll/:slug/submission/:id` | Edit one's own submission (ownership enforced by participant identity). |
 | `DELETE` | `/api/poll/:slug/submission/:id` | Withdraw one's own submission. |
 
 **Poll management (owner or super admin)**:
@@ -187,7 +195,8 @@ Global-Pulse/
 | `POST` | `/api/login` | Log in `{ email, password }`; sets a session cookie. |
 | `POST` | `/api/logout` | Clears the session. |
 | `GET` | `/api/session` | Current auth state: `{ authenticated, email, role, isSuperAdmin, hasUsers }`. |
-| `GET` | `/api/admin/users` | List accounts `{ id, email, role }` for the reset picker. *Super admin only.* |
+| `POST` | `/api/change-password` | Change your own password `{ currentPassword, newPassword }` (verifies the current one). |
+| `GET` | `/api/admin/users` | List accounts `{ id, email, role }` (reset picker + Users page). *Super admin only.* |
 | `POST` | `/api/admin/reset-link` | Generate a one-time reset link `{ email }` → `{ resetPath, expiresInMinutes }`. *Super admin only.* |
 | `GET` | `/api/reset/validate` | Check a reset token `?token=…` → `{ valid, email? }`. |
 | `POST` | `/api/reset-password` | Set a new password `{ token, password }` via a valid reset link. |
