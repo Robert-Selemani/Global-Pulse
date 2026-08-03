@@ -185,7 +185,7 @@ function pollCard(poll) {
   actions.className = 'poll-actions';
 
   const present = actionBtn(archived ? 'View results' : 'Open results', '', () => {
-    window.open('/p/' + poll.slug, '_blank');
+    window.open('/results/' + poll.slug, '_blank');
   });
   actions.appendChild(present);
 

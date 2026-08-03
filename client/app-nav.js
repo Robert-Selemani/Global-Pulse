@@ -15,7 +15,7 @@
   const ITEMS = [
     // Results is the full-bleed public map — open it in a new tab so the app
     // shell (and this menu) stays put in the original tab.
-    { label: 'Results ↗', href: '/present', match: ['/present', '/p/'], external: true },
+    { label: 'Results ↗', href: '/present', match: ['/present', '/p/', '/results/'], external: true },
     { label: 'Polls', href: '/dashboard', match: ['/dashboard'] },
     { label: 'Account', href: '/account', match: ['/account'] },
     { label: 'Users', href: '/admin/users', match: ['/admin/users'], admin: true },
@@ -96,7 +96,7 @@
       if (polls && polls.length) {
         const target = polls.find((p) => p.status !== 'archived') || polls[0];
         const link = nav.querySelector('a[href="/present"]');
-        if (link && target) link.href = '/p/' + target.slug;
+        if (link && target) link.href = '/results/' + target.slug;
       }
     } catch (_) {
       /* leave Results pointing at /present */

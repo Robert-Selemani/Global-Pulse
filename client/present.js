@@ -8,7 +8,7 @@
  * falls back to the default (legacy) poll via the global data alias.
  */
 (function () {
-  const m = location.pathname.match(/^\/p\/([a-z0-9-]+)$/);
+  const m = location.pathname.match(/^\/(?:results|p)\/([a-z0-9-]+)$/);
   const slug = m ? m[1] : null;
 
   const titleEl = document.getElementById('present-title');

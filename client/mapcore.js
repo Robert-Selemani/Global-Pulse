@@ -120,6 +120,13 @@ window.GP = (function () {
     pat.setAttribute('patternContentUnits', 'objectBoundingBox');
     pat.setAttribute('width', '1');
     pat.setAttribute('height', '1');
+    // Accent-coloured backing so a country still reads as "represented" if its
+    // flag image is slow or unavailable, instead of showing a transparent hole.
+    const rect = document.createElementNS(SVGNS, 'rect');
+    rect.setAttribute('width', '1');
+    rect.setAttribute('height', '1');
+    rect.setAttribute('fill', '#2fd27a');
+    pat.appendChild(rect);
     const img = document.createElementNS(SVGNS, 'image');
     img.setAttribute('width', '1');
     img.setAttribute('height', '1');
@@ -375,9 +382,15 @@ window.GP = (function () {
       const layer = state.layersById[feature.id];
       if (layer) bounds.extend(layer.getBounds());
     }
-    // Tight padding + the map's max zoom so the region fills the viewport as
-    // fully as its shape allows — no manual zooming needed when presenting.
-    if (bounds.isValid()) map.fitBounds(bounds, { padding: [8, 8], maxZoom: 6 });
+    // Fill the viewport with the region instead of fitting it inside with
+    // margins. The results map is a tall, half-width panel, so a fit-inside
+    // leaves big gaps around a compact continent like Africa. getBoundsZoom
+    // with inside=true returns the zoom at which the region covers the whole
+    // map (ocean overflow is cropped) — no manual zooming needed to present.
+    if (bounds.isValid()) {
+      const z = Math.min(map.getBoundsZoom(bounds, true), map.getMaxZoom());
+      map.setView(bounds.getCenter(), z, { animate: false });
+    }
   }
 
   // --- Data flow ------------------------------------------------------------
@@ -429,6 +442,9 @@ window.GP = (function () {
     // crisp and seam-free, and removes an external tile dependency.
     labelLayer = L.layerGroup().addTo(map);
     map.on('zoom zoomend', updateZoomIndicator);
+    // Re-assert flag fills after a zoom/pan (e.g. focusing a continent) so the
+    // flags reliably repaint on the represented countries.
+    map.on('zoomend moveend', applyFlagFills);
     if (els.zoomSlider) {
       els.zoomSlider.addEventListener('input', () => {
         const z = parseFloat(els.zoomSlider.value);

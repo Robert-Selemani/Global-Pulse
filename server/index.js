@@ -2401,8 +2401,9 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    // Per-poll presentation: /p/:slug -> present.html (slug read client-side).
-    if (req.method === 'GET' && /^\/p\/[a-z0-9-]+$/.test(pathname)) {
+    // Per-poll results: /results/:slug (and the legacy /p/:slug alias) ->
+    // present.html; the slug is read client-side.
+    if (req.method === 'GET' && /^\/(results|p)\/[a-z0-9-]+$/.test(pathname)) {
       serveStatic(req, res, '/present.html');
       return;
     }
