@@ -313,7 +313,11 @@ window.GP = (function () {
     els.countriesList.appendChild(frag);
   }
 
+  // The presentation page animates these counters itself (count-up), so it can
+  // opt out of the plain text writes here via useExternalStats().
+  let externalStats = false;
   function renderStats() {
+    if (externalStats) return;
     const t = state.data.totals || {};
     if (els.statCountries) els.statCountries.textContent = t.activeCountries || 0;
     if (els.statCommunities) els.statCommunities.textContent = t.totalCommunities || 0;
@@ -493,6 +497,21 @@ window.GP = (function () {
     renderCountriesList,
     renderCommunityList,
     refreshStyles,
+    // Let the caller own the header stat numbers (for count-up animation).
+    useExternalStats() {
+      externalStats = true;
+    },
+    // Briefly flash a country on the map (e.g. when a new entry lands there).
+    pulseCountry(id) {
+      const layer = state.layersById[id];
+      const path = layer && layer._path;
+      if (!path) return;
+      path.classList.remove('gp-pulse');
+      // Force reflow so the animation restarts if the country pulses again.
+      void path.getBoundingClientRect();
+      path.classList.add('gp-pulse');
+      setTimeout(() => path.classList.remove('gp-pulse'), 1500);
+    },
     onSelect(fn) {
       selectHandler = fn;
     },

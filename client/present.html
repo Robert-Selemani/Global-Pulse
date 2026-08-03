@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="/vendor/leaflet/leaflet.css" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
-  <body>
+  <body class="presenting">
     <header class="app-header">
       <div class="brand">
         <span class="pulse-dot" aria-hidden="true"></span>
@@ -29,6 +29,14 @@
     <main class="layout layout--present">
       <section class="map-panel">
         <div id="map" role="application" aria-label="World community map"></div>
+
+        <div class="join-qr" id="join-qr" hidden>
+          <div class="join-qr-code" id="join-qr-code"></div>
+          <p>Scan to join</p>
+        </div>
+
+        <div class="ticker" id="ticker" aria-live="polite" aria-label="Recent joins"></div>
+
         <div class="map-focus" id="map-focus">
           <label for="continent-select">🌍 Focus</label>
           <select id="continent-select" aria-label="Focus the map on a continent">
@@ -91,6 +99,7 @@
     </footer>
 
     <script src="/vendor/leaflet/leaflet.js"></script>
+    <script src="/vendor/qrcode/qrcode.js"></script>
     <script src="/mapcore.js"></script>
     <script src="/chart.js"></script>
     <script src="/present.js"></script>
