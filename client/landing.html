@@ -53,12 +53,21 @@
           </div>
         </div>
 
-        <!-- Preview card: a taste of the live results screen -->
-        <div class="lp-hero-card" aria-hidden="true">
+        <!-- Preview card: a made-up poll's results, mirroring what /p/<slug>
+             actually renders - stats, flags, the countries list and a join
+             toast. None of it is real data, so it is marked as a sample on
+             its face. The numbers are self-consistent: 18 flags = 18
+             countries, and the three rows are the top of the countries list
+             sorted by participants. -->
+        <div class="lp-hero-card is-sample" aria-hidden="true">
+          <div class="lp-card-head">
+            <p class="lp-card-poll">Mother Tongue Day</p>
+            <span class="lp-card-tag">Sample poll</span>
+          </div>
           <div class="lp-card-stats">
-            <div><strong>19</strong><span>Countries</span></div>
-            <div><strong>20</strong><span>Communities</span></div>
-            <div><strong>20</strong><span>Participants</span></div>
+            <div><strong>18</strong><span>Countries</span></div>
+            <div><strong>26</strong><span>Communities</span></div>
+            <div><strong>41</strong><span>Participants</span></div>
           </div>
           <div class="lp-card-flags">
             <img src="/vendor/flags/ke.png" alt="" /><img src="/vendor/flags/ng.png" alt="" />
@@ -71,9 +80,44 @@
             <img src="/vendor/flags/in.png" alt="" /><img src="/vendor/flags/jp.png" alt="" />
             <img src="/vendor/flags/cn.png" alt="" /><img src="/vendor/flags/au.png" alt="" />
           </div>
+          <p class="lp-card-label">Countries represented</p>
+          <ul class="lp-card-rows">
+            <li>
+              <span class="lp-row-name">
+                <img src="/vendor/flags/mw.png" alt="" />Malawi
+              </span>
+              <span class="lp-row-counts">
+                <span class="cc-comm">4 communities</span>
+                <span class="cc-users">7 participants</span>
+              </span>
+            </li>
+            <li>
+              <span class="lp-row-name">
+                <img src="/vendor/flags/ke.png" alt="" />Kenya
+              </span>
+              <span class="lp-row-counts">
+                <span class="cc-comm">3 communities</span>
+                <span class="cc-users">6 participants</span>
+              </span>
+            </li>
+            <li>
+              <span class="lp-row-name">
+                <img src="/vendor/flags/zw.png" alt="" />Zimbabwe
+              </span>
+              <span class="lp-row-counts">
+                <span class="cc-comm">3 communities</span>
+                <span class="cc-users">5 participants</span>
+              </span>
+            </li>
+          </ul>
+
+          <div class="lp-card-toast">
+            <img src="/vendor/flags/zw.png" alt="" />
+            <span><strong>Shona</strong> joined from Zimbabwe</span>
+          </div>
+
           <p class="lp-card-cap">
-            <span class="pulse-dot" aria-hidden="true"></span> Filling in live as
-            people join
+            Example data - your own poll fills in live as people join
           </p>
         </div>
       </section>

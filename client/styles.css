@@ -1562,12 +1562,18 @@ body.landing {
   display: block;
   height: auto;
   min-height: 100%;
+  /* One content width + gutter for every landing band, so the nav, hero,
+     sections and CTA all line up on the same left/right edge. */
+  --lp-max: 1600px;
+  --lp-gutter: clamp(24px, 4vw, 56px);
 }
 .lp-nav {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 18px 24px;
+  /* Full-bleed bar, but its contents align with the capped sections below. */
+  padding: 18px
+    max(var(--lp-gutter), calc((100% - var(--lp-max)) / 2 + var(--lp-gutter)));
   border-bottom: 1px solid var(--border);
   background: linear-gradient(180deg, #16202f 0%, #111a27 100%);
 }
@@ -1581,12 +1587,12 @@ body.landing {
 
 /* Hero */
 .lp-hero {
-  max-width: 1120px;
+  max-width: var(--lp-max);
   margin: 0 auto;
-  padding: 64px 24px 40px;
+  padding: 64px var(--lp-gutter) 40px;
   display: grid;
-  grid-template-columns: 1.1fr 0.9fr;
-  gap: 48px;
+  grid-template-columns: 1.1fr minmax(360px, 0.7fr);
+  gap: clamp(48px, 6vw, 88px);
   align-items: center;
 }
 .lp-eyebrow {
@@ -1608,7 +1614,7 @@ body.landing {
   font-size: 18px;
   line-height: 1.6;
   color: var(--muted);
-  max-width: 560px;
+  max-width: 620px;
 }
 .lp-cta-row {
   display: flex;
@@ -1627,6 +1633,38 @@ body.landing {
   border-radius: 18px;
   padding: 22px;
   box-shadow: var(--shadow);
+}
+/* The card is a mockup, not live data: a dashed edge and a "Sample poll" tag
+   keep it from reading as real communities registered on the site. */
+.lp-hero-card.is-sample {
+  border-style: dashed;
+  border-color: #35496a;
+}
+.lp-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.lp-card-poll {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: var(--text);
+}
+.lp-card-tag {
+  flex: none;
+  padding: 3px 10px;
+  border: 1px dashed var(--border);
+  border-radius: 999px;
+  background: rgba(255, 122, 69, 0.12);
+  color: var(--pin);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
 }
 .lp-card-stats {
   display: flex;
@@ -1664,20 +1702,94 @@ body.landing {
   border-radius: 4px;
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
-.lp-card-cap {
+/* Countries list + join toast: the same shapes the results page renders. */
+.lp-card-label {
+  margin: 18px 0 8px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+}
+.lp-card-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.lp-card-rows li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 10px;
+  background: #0e1725;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.lp-row-name {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 16px 0 0;
   font-size: 13px;
+}
+.lp-row-name img {
+  width: 22px;
+  height: 16px;
+  object-fit: cover;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+.lp-row-counts {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  white-space: nowrap;
+}
+.lp-row-counts .cc-comm {
+  font-size: 12px;
+  color: var(--accent);
+}
+.lp-row-counts .cc-users {
+  font-size: 11px;
   color: var(--muted);
+}
+.lp-card-toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: rgba(16, 24, 37, 0.94);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 10px;
+  font-size: 13px;
+}
+.lp-card-toast strong {
+  color: var(--accent);
+}
+.lp-card-toast img {
+  width: 26px;
+  height: 19px;
+  object-fit: cover;
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+.lp-card-cap {
+  margin: 14px 0 0;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--muted);
+  text-align: center;
 }
 
 /* Sections */
 .lp-section {
-  max-width: 1120px;
+  max-width: var(--lp-max);
   margin: 0 auto;
-  padding: 40px 24px;
+  padding: 40px var(--lp-gutter);
 }
 .lp-section-title {
   text-align: center;
@@ -1744,7 +1856,9 @@ body.landing {
 
 /* Closing CTA */
 .lp-cta {
-  max-width: 1120px;
+  /* Panel edges line up with the section content above it. */
+  width: calc(100% - var(--lp-gutter) * 2);
+  max-width: calc(var(--lp-max) - var(--lp-gutter) * 2);
   margin: 20px auto 60px;
   padding: 48px 24px;
   text-align: center;
