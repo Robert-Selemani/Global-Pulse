@@ -15,6 +15,12 @@
   box-sizing: border-box;
 }
 
+/* Class-level `display` (.poll-code, .admin-btn, ...) otherwise beats the
+   attribute and leaves panels the page meant to hide on screen. */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   margin: 0;
@@ -1380,7 +1386,8 @@ body.focus-open {
   flex-wrap: wrap;
 }
 
-.create-row input {
+.create-row input,
+.create-row select {
   flex: 1 1 200px;
   padding: 10px 12px;
   background: #0e1725;
@@ -1390,13 +1397,57 @@ body.focus-open {
   font-size: 14px;
 }
 
-.create-row input:focus {
+.create-row input:focus,
+.create-row select:focus {
   outline: none;
   border-color: var(--accent);
 }
 
 .create-row .admin-btn {
   flex: 0 0 auto;
+}
+
+/* Admin users list: plain <li>s, so give them the same row treatment the
+   countries list gets from .country-row. */
+#users-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 12px;
+  background: #0e1725;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+/* Stacked label/field form inside a dash-card (account password change). */
+.create-form label {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin: 10px 0 4px;
+}
+
+.create-form input {
+  width: 100%;
+  padding: 10px 12px;
+  background: #0e1725;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.create-form input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.create-form .admin-btn {
+  margin-top: 12px;
+  align-self: flex-start;
 }
 
 .poll-grid {
@@ -1884,5 +1935,437 @@ body.landing {
   .lp-steps,
   .lp-features {
     grid-template-columns: 1fr;
+  }
+}
+
+/* ================= Phones (sized against iPhone 8 / 375x667) ===============
+   The desktop app is a full-height shell: a fixed sidebar next to a map that
+   fills the remaining space, each with its own scroller. That does not
+   survive a 375px viewport, so on a phone the whole thing becomes one
+   ordinary scrolling document with the panels stacked in a deliberate order:
+   on /vote the join form leads, on the results page the map does.
+
+   The second condition catches the same phones held sideways (667x375),
+   where the height, not the width, is what the split shell runs out of. */
+@media (max-width: 560px), (max-height: 480px) and (max-width: 900px) {
+  html,
+  body {
+    height: auto;
+    min-height: 100%;
+  }
+
+  /* ---- App header (vote + results) ---- */
+  .app-header {
+    padding: 12px 14px;
+    gap: 6px 10px;
+  }
+  .brand h1 {
+    font-size: 17px;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+  }
+  .pulse-dot {
+    width: 10px;
+    height: 10px;
+    flex: none;
+  }
+  .tagline {
+    font-size: 12px;
+  }
+  .admin-area {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+  .app-header .admin-btn {
+    padding: 9px 11px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .account-email {
+    display: none;
+  }
+  /* Three even columns always fit; a flex row with a 22px gap does not. */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+    width: 100%;
+    margin-top: 6px;
+  }
+  .stats strong {
+    font-size: 20px;
+  }
+  .stats span {
+    font-size: 10px;
+    letter-spacing: 0.4px;
+    text-align: center;
+  }
+  .presenting .stats {
+    gap: 4px;
+  }
+  .presenting .stats strong {
+    font-size: 26px;
+  }
+  .presenting .stats span {
+    font-size: 10px;
+    margin-top: 2px;
+  }
+  .presenting .stat {
+    padding: 4px 2px;
+  }
+
+  /* ---- Map pages: one scrolling column instead of a split shell ---- */
+  .layout,
+  .layout--present {
+    display: flex;
+    flex-direction: column;
+    grid-template-columns: none;
+    grid-template-rows: none;
+    gap: 12px;
+    padding: 12px;
+  }
+  /* Drop the sidebar box so its panels can be ordered against the map. */
+  .sidebar {
+    display: contents;
+  }
+  .map-panel {
+    order: 2;
+    height: 46vh;
+    min-height: 260px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  /* /vote: the form is why someone opened the page, so it goes first. */
+  .entry-form {
+    order: 1;
+  }
+  .mine-panel {
+    order: 3;
+  }
+  .countries-panel {
+    order: 4;
+  }
+  .community-panel {
+    order: 5;
+  }
+  /* Results: the map leads, then the chart and the lists. */
+  .layout--present .map-panel {
+    order: 1;
+  }
+  .layout--present .chart-panel {
+    order: 2;
+  }
+  .layout--present .countries-panel {
+    order: 3;
+  }
+  .layout--present .community-panel {
+    order: 4;
+  }
+
+  /* ---- Map overlays: keep the corners clear of each other ---- */
+  .legend,
+  .zoom-control {
+    display: none; /* pinch-zoom replaces the slider; the legend costs a row */
+  }
+  .map-focus {
+    top: 8px;
+    right: 8px;
+    padding: 6px 8px;
+    gap: 6px;
+  }
+  .map-focus label {
+    font-size: 11px;
+  }
+  .map-focus select {
+    font-size: 13px;
+    padding: 5px 6px;
+  }
+  .join-qr {
+    top: auto;
+    bottom: 10px;
+    left: 10px;
+    padding: 8px 8px 6px;
+  }
+  .join-qr-code img {
+    width: 76px;
+    height: 76px;
+  }
+  .join-qr p {
+    margin-top: 4px;
+    font-size: 10px;
+  }
+  /* Sit to the right of the QR card rather than centred under it. */
+  .ticker {
+    left: 104px;
+    right: 10px;
+    bottom: 12px;
+    transform: none;
+    width: auto;
+    max-width: none;
+    align-items: stretch;
+  }
+  .toast {
+    font-size: 13px;
+    padding: 7px 10px;
+    gap: 8px;
+  }
+  .toast-flag {
+    width: 22px;
+    height: 16px;
+  }
+
+  /* ---- Full-screen metric view ---- */
+  .focus-view {
+    padding: 58px 16px 24px;
+  }
+  .focus-close {
+    top: 10px;
+    right: 12px;
+  }
+  .focus-title {
+    font-size: 12px;
+    letter-spacing: 2px;
+  }
+  .focus-sub {
+    font-size: 15px;
+    margin-bottom: 20px;
+  }
+  .fgrid {
+    grid-template-columns: 1fr;
+  }
+  .fchip {
+    font-size: 14px;
+    padding: 7px 12px;
+  }
+
+  /* ---- Organizer shell: the side nav becomes a compact top bar ---- */
+  /* Without min-width:0 the nav's min-content width (all five links in a row)
+     stretches the grid track and gives the whole page a horizontal scroll. */
+  .app-shell,
+  .app-sidebar,
+  .app-nav,
+  .app-main,
+  .app-main-inner {
+    min-width: 0;
+  }
+  .app-sidebar {
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px 12px;
+  }
+  .app-brand {
+    font-size: 15px;
+    padding: 0;
+  }
+  .app-nav {
+    order: 3;
+    width: 100%;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .app-nav::-webkit-scrollbar {
+    display: none;
+  }
+  .app-nav-link {
+    padding: 10px 14px;
+    font-size: 14px;
+    white-space: nowrap;
+  }
+  .app-nav-foot {
+    margin: 0 0 0 auto;
+    flex-direction: row;
+    align-items: center;
+  }
+  .app-nav-foot .admin-btn.full {
+    width: auto;
+    margin-top: 0;
+    padding: 8px 12px;
+  }
+  .app-main {
+    padding: 16px 14px 32px;
+  }
+  .app-main-inner {
+    gap: 18px;
+  }
+  .page-title {
+    font-size: 20px;
+  }
+
+  /* ---- Dashboard ---- */
+  .dash-wrap {
+    padding: 16px 14px 32px;
+    gap: 18px;
+  }
+  .dash-card {
+    padding: 14px;
+  }
+  .poll-grid {
+    grid-template-columns: 1fr;
+  }
+  .create-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  /* flex: 1 1 200px sizes the main axis - which is now height, not width. */
+  .create-row input,
+  .create-row select {
+    flex: 0 0 auto;
+  }
+  .create-row .admin-btn {
+    width: 100%;
+  }
+  .poll-actions .mini-btn {
+    padding: 9px 12px;
+    font-size: 13px;
+  }
+  .qr-box.small img {
+    width: 112px;
+    height: 112px;
+  }
+  #reset-link-url {
+    min-width: 0;
+  }
+
+  /* ---- Auth pages + modal ---- */
+  .auth-wrap {
+    padding: 16px;
+  }
+  .auth-card,
+  .modal {
+    padding: 18px;
+  }
+
+  /* ---- Touch targets. 16px on fields stops iOS zooming in on focus. ---- */
+  .auth-card input,
+  .modal input,
+  .entry-form input,
+  .entry-form select,
+  .create-row input,
+  .create-row select,
+  .create-form input,
+  #participation-input,
+  #reset-link-url {
+    font-size: 16px;
+    padding: 12px;
+  }
+  /* 2px tracking pushes the placeholder past the edge of a 375px field. */
+  #participation-input {
+    letter-spacing: 1px;
+  }
+  .admin-btn {
+    padding: 11px 16px;
+  }
+  #submit-btn,
+  .btn-ghost {
+    padding: 13px;
+    font-size: 15px;
+  }
+  /* Anything tappable gets a finger-sized box (44px is Apple's guidance). */
+  .admin-btn,
+  #submit-btn,
+  .btn-ghost,
+  .app-nav-link {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .mini-btn {
+    min-height: 40px;
+    display: inline-flex;
+    align-items: center;
+  }
+  /* The two header bars are tight already, so they get a smaller floor. */
+  .app-header .admin-btn,
+  .lp-nav .admin-btn,
+  .app-nav-foot .admin-btn.full {
+    min-height: 38px;
+  }
+  .entry-form select,
+  .map-focus select {
+    min-height: 44px;
+  }
+  .map-focus select {
+    min-height: 38px;
+  }
+  /* Leaflet's own +/- buttons are 30px; too small for a thumb. */
+  .leaflet-touch .leaflet-bar a,
+  .leaflet-control-zoom a {
+    width: 38px;
+    height: 38px;
+    line-height: 38px;
+  }
+
+  /* ---- Landing ---- */
+  body.landing {
+    --lp-gutter: 16px;
+  }
+  .lp-nav {
+    padding: 12px 16px;
+    gap: 8px;
+  }
+  .lp-nav .brand h1 {
+    font-size: 17px;
+    white-space: nowrap;
+  }
+  .lp-nav-links {
+    gap: 6px;
+  }
+  .lp-nav .admin-btn {
+    padding: 9px 11px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .lp-hero {
+    padding-top: 28px;
+    gap: 24px;
+  }
+  .lp-eyebrow {
+    font-size: 11px;
+    letter-spacing: 1.4px;
+  }
+  .lp-lead {
+    font-size: 16px;
+    margin-bottom: 22px;
+  }
+  .lp-cta-row .admin-btn {
+    width: 100%;
+    text-align: center;
+  }
+  .lp-hero-card {
+    padding: 16px;
+  }
+  /* Six across at 375px keeps the flags legible (nine would be ~30px). */
+  .lp-card-flags {
+    grid-template-columns: repeat(6, 1fr);
+  }
+  .lp-card-stats strong {
+    font-size: 26px;
+  }
+  .lp-section {
+    padding: 28px var(--lp-gutter);
+  }
+  .lp-section-title {
+    font-size: 22px;
+    margin-bottom: 20px;
+  }
+  .lp-cta {
+    padding: 32px 18px;
+  }
+  .lp-cta h3 {
+    font-size: 22px;
+  }
+
+  /* ---- Footer ---- */
+  .app-footer {
+    padding: 12px 16px;
+    font-size: 12px;
   }
 }
