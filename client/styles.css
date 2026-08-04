@@ -1619,11 +1619,6 @@ body.landing {
   font-size: 16px;
   padding: 13px 22px;
 }
-.lp-note {
-  margin: 16px 0 0;
-  font-size: 13px;
-  color: var(--muted);
-}
 
 /* Hero preview card */
 .lp-hero-card {
@@ -1658,7 +1653,7 @@ body.landing {
 }
 .lp-card-flags {
   display: grid;
-  grid-template-columns: repeat(8, 1fr);
+  grid-template-columns: repeat(9, 1fr);
   gap: 8px;
 }
 .lp-card-flags img {
