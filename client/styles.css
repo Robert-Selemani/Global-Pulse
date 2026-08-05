@@ -1062,29 +1062,30 @@ body {
 }
 
 /* "Scan to join" card, top-left of the map. */
-.join-qr {
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  z-index: 500;
-  background: #ffffff;
+/* "Scan to join" panel, in the sidebar alongside the map. */
+.join-panel {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 10px 10px 8px;
-  box-shadow: var(--shadow);
+  padding: 16px;
   text-align: center;
+}
+.join-panel h2 {
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+.join-qr-code {
+  display: inline-block;
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 10px;
+  line-height: 0;
 }
 .join-qr-code img {
   display: block;
   width: 132px;
   height: 132px;
   image-rendering: pixelated;
-}
-.join-qr p {
-  margin: 6px 0 0;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.3px;
-  color: #0e1420;
 }
 
 /* Live "just joined" ticker, bottom-centre of the map. */
@@ -1276,10 +1277,6 @@ body.focus-open {
 @media (max-width: 860px) {
   .presenting .stats strong {
     font-size: 30px;
-  }
-  .join-qr-code img {
-    width: 96px;
-    height: 96px;
   }
 }
 
@@ -2080,18 +2077,21 @@ body.landing {
   .community-panel {
     order: 5;
   }
-  /* Results: the map leads, then the chart and the lists. */
+  /* Results: the map leads, then the way in, then the chart and the lists. */
   .layout--present .map-panel {
     order: 1;
   }
-  .layout--present .chart-panel {
+  .layout--present .join-panel {
     order: 2;
   }
-  .layout--present .countries-panel {
+  .layout--present .chart-panel {
     order: 3;
   }
-  .layout--present .community-panel {
+  .layout--present .countries-panel {
     order: 4;
+  }
+  .layout--present .community-panel {
+    order: 5;
   }
 
   /* ---- Map overlays: keep the corners clear of each other ---- */
@@ -2112,23 +2112,18 @@ body.landing {
     font-size: 13px;
     padding: 5px 6px;
   }
-  .join-qr {
-    top: auto;
-    bottom: 10px;
-    left: 10px;
-    padding: 8px 8px 6px;
+  .join-panel {
+    padding: 12px;
+  }
+  .join-panel h2 {
+    margin-bottom: 8px;
   }
   .join-qr-code img {
-    width: 76px;
-    height: 76px;
+    width: 116px;
+    height: 116px;
   }
-  .join-qr p {
-    margin-top: 4px;
-    font-size: 10px;
-  }
-  /* Sit to the right of the QR card rather than centred under it. */
   .ticker {
-    left: 104px;
+    left: 10px;
     right: 10px;
     bottom: 12px;
     transform: none;

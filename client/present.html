@@ -53,11 +53,6 @@
       <section class="map-panel">
         <div id="map" role="application" aria-label="World community map"></div>
 
-        <div class="join-qr" id="join-qr" hidden>
-          <div class="join-qr-code" id="join-qr-code"></div>
-          <p>Scan to join</p>
-        </div>
-
         <div class="ticker" id="ticker" aria-live="polite" aria-label="Recent joins"></div>
 
         <div class="map-focus" id="map-focus">
@@ -77,6 +72,13 @@
       </section>
 
       <aside class="sidebar">
+        <!-- Beside the map, not over it: an overlay hid the countries it
+             covered, which is the whole point of the screen. -->
+        <div class="join-panel" id="join-qr" hidden>
+          <h2>Scan to join</h2>
+          <div class="join-qr-code" id="join-qr-code"></div>
+        </div>
+
         <div class="chart-panel">
           <div class="community-header">
             <h2>Communities by country</h2>

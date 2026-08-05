@@ -34,6 +34,11 @@ window.GP = (function () {
     selectedId: null,
   };
 
+  // Breathing room left around a focused continent, as a share of the panel
+  // (Leaflet's padding is the total across both sides, so this is half that
+  // at each edge). Enough that the coast is not touching the frame.
+  const FRAME_MARGIN = 0.09;
+
   const $ = (id) => document.getElementById(id);
   const els = {
     mapFocus: $('map-focus'),
@@ -371,12 +376,6 @@ window.GP = (function () {
     els.continentSelect.addEventListener('change', () => focusContinent(els.continentSelect.value));
   }
 
-  // How far past the panel the region may spill before we stop enlarging it.
-  // A pure cover (fill both axes, crop the surplus) is right when the region
-  // and the panel are a similar shape, but Asia in a tall panel would lose a
-  // third of its width - and with it the countries at either end. 1.3 keeps
-  // the fill honest without hiding places people can pick.
-  const FILL_LIMIT = 1.3;
 
   /**
    * A country's principal landmass, measured in two longitude frames: as-is,
@@ -476,13 +475,13 @@ window.GP = (function () {
   }
 
   /**
-   * Put the region on screen so it covers the panel edge to edge.
+   * Put the whole region on screen, centred, as large as it will go.
    *
-   * Fill, not fit-inside: the results map is a tall half-width panel and the
-   * phone map is a short wide one, so fitting a compact region like Africa
-   * inside either leaves big empty margins. getBoundsZoom(bounds, true) is the
-   * zoom at which the region covers the whole viewport (surplus ocean is
-   * cropped), which is what "no zooming needed to present" means.
+   * The region is sized to fit inside the panel rather than to cover it: a
+   * cover crops whatever does not match the panel's shape, which quietly took
+   * the top off Africa and pushed the far ends of Asia out of view. Fitting
+   * keeps every country a participant can pick on screen and leaves the map
+   * sitting square in its panel, with nothing to zoom.
    *
    * invalidateSize() first because the panel is often still being laid out
    * when this runs (flex/grid on load, or an orientation change).
@@ -492,15 +491,15 @@ window.GP = (function () {
     map.invalidateSize({ animate: false });
     const bounds = continentBounds(name);
     if (!bounds.isValid()) return;
-    // Cover the panel, but stop short of a crop that would push whole
-    // countries off the edges (see FILL_LIMIT).
-    const cover = map.getBoundsZoom(bounds, true);
-    const contain = map.getBoundsZoom(bounds, false);
-    const z = Math.min(cover, contain + Math.log2(FILL_LIMIT), map.getMaxZoom());
+    // A little air on each side so the coastline is not flush against the
+    // panel edge.
+    const size = map.getSize();
+    const pad = L.point(size.x * FRAME_MARGIN, size.y * FRAME_MARGIN);
+    const z = Math.min(map.getBoundsZoom(bounds, false, pad), map.getMaxZoom());
     // Centre on the middle of the projected box, not on bounds.getCenter():
     // Mercator stretches high latitudes, so the lat/lng midpoint of a region
-    // like Africa sits well below its pixel midpoint and the crop comes out
-    // lopsided (~60px on a tall panel).
+    // like Africa sits well below its pixel midpoint and the region would sit
+    // low in the panel (~60px on a tall one).
     const nw = map.project(bounds.getNorthWest(), z);
     const se = map.project(bounds.getSouthEast(), z);
     // wrapLatLng because a straddling continent is measured in a shifted
