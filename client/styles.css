@@ -1450,6 +1450,36 @@ body.focus-open {
   align-self: flex-start;
 }
 
+.create-form select {
+  width: 100%;
+  padding: 10px 12px;
+  background: #0e1725;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.create-form select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* Inline poll editor inside a card. */
+.poll-edit {
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  padding-top: 10px;
+}
+
+.poll-edit .field-hint {
+  margin: 6px 0 0;
+}
+
+.poll-edit .form-message:empty {
+  min-height: 0;
+}
+
 .poll-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));

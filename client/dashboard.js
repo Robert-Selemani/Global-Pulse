@@ -8,11 +8,23 @@
  * handles auth, navigation, and log out.
  */
 
+// Kept in step with the server's list and client/data/continents.json.
+// Antarctica is omitted: nobody runs a poll for it.
+const CONTINENTS = [
+  'Africa',
+  'Asia',
+  'Europe',
+  'North America',
+  'South America',
+  'Oceania',
+];
+
 const $ = (id) => document.getElementById(id);
 const el = {
   createForm: $('create-form'),
   titleInput: $('poll-title-input'),
   descInput: $('poll-desc-input'),
+  continentInput: $('poll-continent-input'),
   createBtn: $('create-btn'),
   createMessage: $('create-message'),
   activePolls: $('active-polls'),
@@ -22,6 +34,9 @@ const el = {
   activeEmpty: $('active-empty'),
   pastEmpty: $('past-empty'),
 };
+
+let lastPolls = [];
+let editingId = null;
 
 function setCreateMessage(text, kind) {
   el.createMessage.textContent = text || '';
@@ -93,6 +108,14 @@ async function archivePoll(poll) {
   await apiJson('/api/polls/' + poll.id + '/archive', { method: 'POST' });
   await loadPolls();
 }
+async function savePoll(poll, fields) {
+  await apiJson('/api/polls/' + poll.id, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  });
+  await loadPolls();
+}
 async function deletePoll(poll) {
   if (
     !window.confirm(
@@ -116,6 +139,102 @@ function actionBtn(label, cls, onClick) {
   return b;
 }
 
+/** The continent a poll is pinned to, or '' for the whole world. */
+function focusOf(poll) {
+  return (poll.settings && poll.settings.focusContinent) || '';
+}
+
+function continentSelect(selected) {
+  const sel = document.createElement('select');
+  sel.setAttribute('aria-label', 'Focus continent');
+  const world = document.createElement('option');
+  world.value = '';
+  world.textContent = 'Whole world';
+  sel.appendChild(world);
+  for (const name of CONTINENTS) {
+    const opt = document.createElement('option');
+    opt.value = name;
+    opt.textContent = name;
+    sel.appendChild(opt);
+  }
+  sel.value = selected || '';
+  return sel;
+}
+
+/**
+ * Inline edit form, shown in place of the card's title/description when the
+ * organizer taps Edit. Covers everything that is safe to change after people
+ * have joined: name, description, and the focus continent.
+ */
+function editForm(poll) {
+  const form = document.createElement('form');
+  form.className = 'create-form poll-edit';
+
+  const titleLabel = document.createElement('label');
+  titleLabel.textContent = 'Poll title';
+  const title = document.createElement('input');
+  title.type = 'text';
+  title.maxLength = 120;
+  title.required = true;
+  title.value = poll.title;
+
+  const descLabel = document.createElement('label');
+  descLabel.textContent = 'Description';
+  const desc = document.createElement('input');
+  desc.type = 'text';
+  desc.maxLength = 200;
+  desc.value = poll.description || '';
+
+  const contLabel = document.createElement('label');
+  contLabel.textContent = 'Focus continent';
+  const cont = continentSelect(focusOf(poll));
+
+  const hint = document.createElement('p');
+  hint.className = 'field-hint';
+  hint.textContent =
+    "Only this continent's countries appear on the join form, and both maps open filled with the region.";
+
+  const msg = document.createElement('p');
+  msg.className = 'form-message';
+
+  const row = document.createElement('div');
+  row.className = 'poll-actions';
+  const save = document.createElement('button');
+  save.type = 'submit';
+  save.className = 'mini-btn';
+  save.textContent = 'Save changes';
+  row.appendChild(save);
+  row.appendChild(actionBtn('Cancel', '', () => cancelEdit()));
+
+  form.append(titleLabel, title, descLabel, desc, contLabel, cont, hint, msg, row);
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!title.value.trim()) {
+      msg.textContent = 'A poll title is required.';
+      msg.className = 'form-message error';
+      return;
+    }
+    save.disabled = true;
+    msg.textContent = 'Saving…';
+    msg.className = 'form-message';
+    try {
+      editingId = null;
+      await savePoll(poll, {
+        title: title.value.trim(),
+        description: desc.value.trim(),
+        focusContinent: cont.value,
+      });
+    } catch (err) {
+      editingId = poll.id;
+      msg.textContent = err.message;
+      msg.className = 'form-message error';
+      save.disabled = false;
+    }
+  });
+  return form;
+}
+
 function pollCard(poll) {
   const archived = poll.status === 'archived';
   const card = document.createElement('article');
@@ -132,6 +251,13 @@ function pollCard(poll) {
   tag.textContent = archived ? 'Archived' : 'Active';
   head.appendChild(tag);
   card.appendChild(head);
+
+  // Editing swaps the descriptive part of the card for the form; the code,
+  // QR and actions below stay put.
+  if (poll.id === editingId) {
+    card.appendChild(editForm(poll));
+    return card;
+  }
 
   if (poll.description) {
     const d = document.createElement('p');
@@ -152,6 +278,14 @@ function pollCard(poll) {
     ' · ' +
     (archived ? 'archived ' + fmtDate(poll.archivedAt) : 'created ' + fmtDate(poll.createdAt));
   card.appendChild(meta);
+
+  const focus = focusOf(poll);
+  if (focus) {
+    const f = document.createElement('p');
+    f.className = 'poll-meta';
+    f.innerHTML = 'Focused on <strong>' + focus + '</strong> - only its countries can be picked.';
+    card.appendChild(f);
+  }
 
   // Participation code + QR (active polls only)
   if (!archived) {
@@ -190,6 +324,7 @@ function pollCard(poll) {
   actions.appendChild(present);
 
   if (!archived) {
+    actions.appendChild(actionBtn('Edit', '', () => startEdit(poll.id)));
     actions.appendChild(
       actionBtn('Copy join link', '', async (e) => {
         try {
@@ -230,6 +365,7 @@ function pollCard(poll) {
 }
 
 function renderPolls(polls) {
+  lastPolls = polls;
   const active = polls.filter((p) => p.status !== 'archived');
   const past = polls.filter((p) => p.status === 'archived');
 
@@ -249,6 +385,17 @@ async function loadPolls() {
   renderPolls(polls || []);
 }
 
+// Which card is in edit mode, re-rendered from the last fetch so opening or
+// closing the form does not need a round trip.
+function startEdit(id) {
+  editingId = id;
+  renderPolls(lastPolls);
+}
+function cancelEdit() {
+  editingId = null;
+  renderPolls(lastPolls);
+}
+
 // ---------------------------------------------------------------------------
 // Events
 // ---------------------------------------------------------------------------
@@ -262,10 +409,15 @@ el.createForm.addEventListener('submit', async (e) => {
     await apiJson('/api/polls', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, description: el.descInput.value.trim() }),
+      body: JSON.stringify({
+        title,
+        description: el.descInput.value.trim(),
+        focusContinent: el.continentInput ? el.continentInput.value : '',
+      }),
     });
     el.titleInput.value = '';
     el.descInput.value = '';
+    if (el.continentInput) el.continentInput.value = '';
     setCreateMessage('Poll created ✅', 'success');
     await loadPolls();
   } catch (err) {

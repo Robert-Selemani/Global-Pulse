@@ -28,7 +28,8 @@ window.GP = (function () {
     geo: null,
     continents: {},
     flags: {},
-    focusContinent: '',
+    focusContinent: '', // what the map is currently showing
+    pollContinent: '', // the poll's pinned continent, '' when unpinned
     layersById: {},
     selectedId: null,
   };
@@ -58,6 +59,7 @@ window.GP = (function () {
   let geoLayer = null;
   let selectHandler = null;
   let dataHandler = null;
+  let resizeBound = false;
 
   // --- Zoom -----------------------------------------------------------------
   function zoomToPct(zoom) {
@@ -333,9 +335,15 @@ window.GP = (function () {
    */
   function populateCountrySelect() {
     if (!els.countrySelect) return;
+    // A poll pinned to a continent offers only that continent's countries.
     const feats = state.geo.features
       .filter((f) => f.id && f.properties && f.properties.name)
+      .filter((f) => !state.pollContinent || state.continents[f.id] === state.pollContinent)
       .sort((a, b) => a.properties.name.localeCompare(b.properties.name));
+    // Keep the placeholder, replace the country options.
+    for (const opt of Array.from(els.countrySelect.options)) {
+      if (opt.value) opt.remove();
+    }
     const frag = document.createDocumentFragment();
     for (const f of feats) {
       const opt = document.createElement('option');
@@ -363,11 +371,153 @@ window.GP = (function () {
     els.continentSelect.addEventListener('change', () => focusContinent(els.continentSelect.value));
   }
 
+  // How far past the panel the region may spill before we stop enlarging it.
+  // A pure cover (fill both axes, crop the surplus) is right when the region
+  // and the panel are a similar shape, but Asia in a tall panel would lose a
+  // third of its width - and with it the countries at either end. 1.3 keeps
+  // the fill honest without hiding places people can pick.
+  const FILL_LIMIT = 1.3;
+
+  /**
+   * A country's principal landmass, measured in two longitude frames: as-is,
+   * and with negatives shifted east by 360.
+   *
+   * Principal, because a country's outlying specks are not where its map
+   * belongs: South Africa's sub-Antarctic islands sit 12 degrees below the
+   * mainland, France's departments reach the Amazon, Portugal's reach the
+   * mid-Atlantic. Two frames, because Oceania and North America straddle the
+   * antimeridian, where an as-is box runs the long way round the globe.
+   */
+  function principalBox(feature) {
+    const g = feature.geometry;
+    if (!g) return null;
+    const polys =
+      g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : [];
+    let best = null;
+    for (const poly of polys) {
+      const ring = poly[0];
+      if (!ring || !ring.length) continue;
+      let south = Infinity;
+      let north = -Infinity;
+      let west = Infinity;
+      let east = -Infinity;
+      let westShifted = Infinity;
+      let eastShifted = -Infinity;
+      for (const [x, y] of ring) {
+        if (y < south) south = y;
+        if (y > north) north = y;
+        if (x < west) west = x;
+        if (x > east) east = x;
+        const shifted = x < 0 ? x + 360 : x;
+        if (shifted < westShifted) westShifted = shifted;
+        if (shifted > eastShifted) eastShifted = shifted;
+      }
+      // Width in whichever frame keeps the polygon whole, so a country that
+      // crosses the line is not measured as if it spanned the planet.
+      const width = Math.min(east - west, eastShifted - westShifted);
+      const area = width * (north - south);
+      if (!best || area > best.area) {
+        best = { south, north, raw: [west, east], shifted: [westShifted, eastShifted], area };
+      }
+    }
+    return best;
+  }
+
+  /** Drop values lying more than 1.5 IQR outside the quartiles (Tukey). */
+  function inlierRange(values) {
+    const sorted = values.slice().sort((a, b) => a - b);
+    const at = (q) => sorted[Math.min(sorted.length - 1, Math.floor(q * (sorted.length - 1)))];
+    const q1 = at(0.25);
+    const q3 = at(0.75);
+    const slack = 1.5 * (q3 - q1);
+    return [q1 - slack, q3 + slack];
+  }
+
+  /**
+   * Lat/lng bounds framing a continent.
+   *
+   * Built from the countries that sit with the rest of the group, so one
+   * far-flung member cannot drag the frame across the globe: continents.json
+   * files Russia under Europe, and its Pacific coast would otherwise stretch
+   * a "Europe" poll from the Atlantic to Chukotka, leaving Europe itself a
+   * sliver at the edge.
+   */
+  function continentBounds(name) {
+    const boxes = [];
+    for (const feature of state.geo.features) {
+      if (state.continents[feature.id] !== name) continue;
+      const box = principalBox(feature);
+      if (box) boxes.push(box);
+    }
+    if (!boxes.length) return L.latLngBounds([]);
+
+    const span = (key) =>
+      Math.max.apply(null, boxes.map((b) => b[key][1])) -
+      Math.min.apply(null, boxes.map((b) => b[key][0]));
+    const key = span('shifted') < span('raw') ? 'shifted' : 'raw';
+
+    const midLon = (b) => (b[key][0] + b[key][1]) / 2;
+    const midLat = (b) => (b.south + b.north) / 2;
+    const lonRange = inlierRange(boxes.map(midLon));
+    const latRange = inlierRange(boxes.map(midLat));
+    const kept = boxes.filter(
+      (b) =>
+        midLon(b) >= lonRange[0] &&
+        midLon(b) <= lonRange[1] &&
+        midLat(b) >= latRange[0] &&
+        midLat(b) <= latRange[1]
+    );
+
+    const bounds = L.latLngBounds([]);
+    for (const b of kept.length ? kept : boxes) {
+      bounds.extend([[b.south, b[key][0]], [b.north, b[key][1]]]);
+    }
+    return bounds;
+  }
+
+  /**
+   * Put the region on screen so it covers the panel edge to edge.
+   *
+   * Fill, not fit-inside: the results map is a tall half-width panel and the
+   * phone map is a short wide one, so fitting a compact region like Africa
+   * inside either leaves big empty margins. getBoundsZoom(bounds, true) is the
+   * zoom at which the region covers the whole viewport (surplus ocean is
+   * cropped), which is what "no zooming needed to present" means.
+   *
+   * invalidateSize() first because the panel is often still being laid out
+   * when this runs (flex/grid on load, or an orientation change).
+   */
+  function fillWithContinent(name) {
+    if (!map || !name) return;
+    map.invalidateSize({ animate: false });
+    const bounds = continentBounds(name);
+    if (!bounds.isValid()) return;
+    // Cover the panel, but stop short of a crop that would push whole
+    // countries off the edges (see FILL_LIMIT).
+    const cover = map.getBoundsZoom(bounds, true);
+    const contain = map.getBoundsZoom(bounds, false);
+    const z = Math.min(cover, contain + Math.log2(FILL_LIMIT), map.getMaxZoom());
+    // Centre on the middle of the projected box, not on bounds.getCenter():
+    // Mercator stretches high latitudes, so the lat/lng midpoint of a region
+    // like Africa sits well below its pixel midpoint and the crop comes out
+    // lopsided (~60px on a tall panel).
+    const nw = map.project(bounds.getNorthWest(), z);
+    const se = map.project(bounds.getSouthEast(), z);
+    // wrapLatLng because a straddling continent is measured in a shifted
+    // frame (e.g. centre 269E for North America). Leaflet draws vector layers
+    // in one world copy only, so an unwrapped centre shows blank ocean.
+    const centre = map.wrapLatLng(map.unproject(nw.add(se).divideBy(2), z));
+    map.setView(centre, z, { animate: false });
+    applyFlagFills();
+  }
+
   function focusContinent(name) {
     state.focusContinent = name;
     refreshStyles();
     renderLabels();
-    if (els.countrySelect) {
+    // Only an unpinned poll lets the view narrow the country choices; when the
+    // poll owns the focus, the dropdown stays fixed to the poll's continent.
+    if (els.countrySelect && !state.pollContinent) {
       for (const opt of els.countrySelect.options) {
         if (!opt.value) continue;
         opt.hidden = !!name && state.continents[opt.value] !== name;
@@ -380,20 +530,29 @@ window.GP = (function () {
       map.setView([20, 10], 2);
       return;
     }
-    const bounds = L.latLngBounds([]);
-    for (const feature of state.geo.features) {
-      if (state.continents[feature.id] !== name) continue;
-      const layer = state.layersById[feature.id];
-      if (layer) bounds.extend(layer.getBounds());
-    }
-    // Fill the viewport with the region instead of fitting it inside with
-    // margins. The results map is a tall, half-width panel, so a fit-inside
-    // leaves big gaps around a compact continent like Africa. getBoundsZoom
-    // with inside=true returns the zoom at which the region covers the whole
-    // map (ocean overflow is cropped) - no manual zooming needed to present.
-    if (bounds.isValid()) {
-      const z = Math.min(map.getBoundsZoom(bounds, true), map.getMaxZoom());
-      map.setView(bounds.getCenter(), z, { animate: false });
+    fillWithContinent(name);
+  }
+
+  /**
+   * Pin the poll to one continent: the join form offers only its countries and
+   * both maps open filled with the region. Call after boot(), once the geometry
+   * and the map panel exist.
+   */
+  function setPollContinent(name) {
+    const continent = name && CONTINENTS.includes(name) ? name : '';
+    state.pollContinent = continent;
+    populateCountrySelect();
+    if (!continent) return;
+    if (els.continentSelect) els.continentSelect.value = continent;
+    focusContinent(continent);
+    // The panel can still be settling (fonts, the phone's flex column, a
+    // rotation): re-fill on the next frame and whenever the box changes size.
+    requestAnimationFrame(() => fillWithContinent(state.focusContinent || continent));
+    if (!resizeBound) {
+      resizeBound = true;
+      window.addEventListener('resize', () => {
+        if (state.focusContinent) fillWithContinent(state.focusContinent);
+      });
     }
   }
 
@@ -437,7 +596,9 @@ window.GP = (function () {
       center: [20, 10],
       zoom: 2,
       minZoom: 2,
-      maxZoom: 6,
+      // Headroom above the old cap of 6 so a compact continent can still fill
+      // a narrow panel (a phone map needs ~7 to cover Europe edge to edge).
+      maxZoom: 9,
       zoomSnap: 0,
       worldCopyJump: true,
       attributionControl: false,
@@ -450,6 +611,9 @@ window.GP = (function () {
     // flags reliably repaint on the represented countries.
     map.on('zoomend moveend', applyFlagFills);
     if (els.zoomSlider) {
+      // Keep the slider's range honest about what the map allows.
+      els.zoomSlider.min = String(map.getMinZoom());
+      els.zoomSlider.max = String(map.getMaxZoom());
       els.zoomSlider.addEventListener('input', () => {
         const z = parseFloat(els.zoomSlider.value);
         if (els.zoomIndicator) els.zoomIndicator.textContent = 'Zoom ' + zoomToPct(z) + '%';
@@ -488,12 +652,14 @@ window.GP = (function () {
     FLAG_BASE,
     setDataUrl,
     initMap,
+    getMap: () => map,
     boot,
     startPolling,
     applyData,
     selectCountry,
     clearSelection,
     focusContinent,
+    setPollContinent,
     renderCountriesList,
     renderCommunityList,
     refreshStyles,

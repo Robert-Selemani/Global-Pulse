@@ -273,6 +273,12 @@ function lockArchived() {
     return;
   }
 
+  // A poll pinned to a continent opens filled with that region and offers only
+  // its countries. The focus control stays available either way so someone can
+  // look around the map; it does not change what they can pick.
+  if (cfg.focusContinent) GP.setPollContinent(cfg.focusContinent);
+  if (GP.els.mapFocus) GP.els.mapFocus.hidden = false;
+
   // Signed-in organizers get their account controls; guests get an "Organizer"
   // link to the dashboard (which handles its own login).
   if (session.authenticated) {

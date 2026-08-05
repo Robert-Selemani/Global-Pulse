@@ -315,6 +315,8 @@
   // -------------------------------------------------------------------------
   // Config + boot
   // -------------------------------------------------------------------------
+  let pollContinent = '';
+
   async function applyConfig() {
     if (!slug) return true; // default poll: keep the generic branding
     try {
@@ -340,6 +342,7 @@
       }
 
       GP.setDataUrl('/api/poll/' + slug + '/data');
+      pollContinent = cfg.focusContinent || '';
       return !archived;
     } catch (_) {
       if (titleEl) titleEl.textContent = 'Poll not found';
@@ -370,6 +373,8 @@
       console.error('Failed to load presentation:', err);
       return;
     }
+    // A pinned poll presents filled with its continent - nothing to zoom.
+    if (pollContinent) GP.setPollContinent(pollContinent);
     // Archived polls are static - no need to poll for updates.
     if (live) GP.startPolling();
   })();

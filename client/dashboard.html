@@ -45,8 +45,21 @@
                   maxlength="200"
                   placeholder="Short description (optional)"
                 />
+                <select id="poll-continent-input" aria-label="Focus continent">
+                  <option value="">Whole world</option>
+                  <option value="Africa">Africa</option>
+                  <option value="Asia">Asia</option>
+                  <option value="Europe">Europe</option>
+                  <option value="North America">North America</option>
+                  <option value="South America">South America</option>
+                  <option value="Oceania">Oceania</option>
+                </select>
                 <button type="submit" class="admin-btn" id="create-btn">Create poll</button>
               </div>
+              <p class="field-hint">
+                A focus continent limits the join form to that continent's
+                countries and opens both maps filled with the region.
+              </p>
               <p class="form-message" id="create-message" role="status"></p>
             </form>
           </section>

@@ -103,6 +103,25 @@ function cleanDisplay(name) {
   return String(name).replace(/\s+/g, ' ').trim();
 }
 
+// A poll can be pinned to one continent: the join form then only offers that
+// continent's countries and both maps open filled with the region. Kept in
+// step with client/data/continents.json.
+const CONTINENTS = [
+  'Africa',
+  'Asia',
+  'Europe',
+  'North America',
+  'South America',
+  'Oceania',
+  'Antarctica',
+];
+
+/** '' (no focus) for anything not in the list, so a bad value can't stick. */
+function cleanContinent(value) {
+  const name = cleanDisplay(value == null ? '' : value);
+  return CONTINENTS.includes(name) ? name : '';
+}
+
 /** Validate a submission/edit payload; returns an error string or null. */
 function validateEntry(data) {
   const countryId = String(data.countryId || '').trim();
@@ -2113,11 +2132,17 @@ const server = http.createServer(async (req, res) => {
           sendJson(res, 400, { error: 'Poll title is too long.' });
           return;
         }
-        const poll = await store.createPoll({
+        let poll = await store.createPoll({
           ownerId: user.id,
           title,
           description: data.description || '',
         });
+        const focusContinent = cleanContinent(data.focusContinent);
+        if (focusContinent) {
+          poll = await store.updatePoll(poll.id, {
+            settings: Object.assign({}, poll.settings, { focusContinent }),
+          });
+        }
         sendJson(res, 201, { poll });
         return;
       }
@@ -2207,6 +2232,12 @@ const server = http.createServer(async (req, res) => {
           fields.title = title;
         }
         if (data.description != null) fields.description = data.description;
+        // '' clears the focus and puts every country back on the join form.
+        if (data.focusContinent != null) {
+          fields.settings = Object.assign({}, poll.settings, {
+            focusContinent: cleanContinent(data.focusContinent),
+          });
+        }
         sendJson(res, 200, { poll: await store.updatePoll(poll.id, fields) });
         return;
       }
@@ -2243,6 +2274,7 @@ const server = http.createServer(async (req, res) => {
           title: poll.title,
           status: poll.status,
           participationRequired: !!poll.participationCode,
+          focusContinent: cleanContinent(poll.settings && poll.settings.focusContinent),
         });
         return;
       }
